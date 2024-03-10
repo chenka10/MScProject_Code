@@ -1,4 +1,7 @@
-import nn
+import torch.nn as nn
+import torch
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class lstm(nn.Module):
     def __init__(self, input_size, output_size, hidden_size, n_layers, batch_size):
@@ -16,11 +19,11 @@ class lstm(nn.Module):
                 nn.Tanh())
         self.hidden = self.init_hidden()
 
-    def init_hidden(self):
+    def init_hidden(self):        
         hidden = []
         for i in range(self.n_layers):
-            hidden.append((torch.zeros(self.batch_size, self.hidden_size).to(self.device),
-                           torch.zeros(self.batch_size, self.hidden_size).to(self.device)))
+            hidden.append((torch.zeros(self.batch_size, self.hidden_size).to(device),
+                           torch.zeros(self.batch_size, self.hidden_size).to(device)))
         return hidden
 
     def forward(self, input):
@@ -46,16 +49,16 @@ class gaussian_lstm(nn.Module):
         self.logvar_net = nn.Linear(hidden_size, output_size)
         self.hidden = self.init_hidden()
 
-    def init_hidden(self):
+    def init_hidden(self):        
         hidden = []
         for i in range(self.n_layers):
-            hidden.append((torch.zeros(self.batch_size, self.hidden_size).to(self.device),
-                           torch.zeros(self.batch_size, self.hidden_size).to(self.device)))
+            hidden.append((torch.zeros(self.batch_size, self.hidden_size).to(device),
+                           torch.zeros(self.batch_size, self.hidden_size).to(device)))
         return hidden
 
     def reparameterize(self, mu, logvar):
         logvar = logvar.mul(0.5).exp_()
-        eps = logvar.data.new(logvar.size()).normal_().to(self.device)
+        eps = logvar.data.new(logvar.size()).normal_().to(device)
         return eps.mul(logvar).add_(mu)
 
     def forward(self, input):

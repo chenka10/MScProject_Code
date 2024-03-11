@@ -2,44 +2,50 @@ import torch
 import torch.nn as nn
 
 class vgg_layer(nn.Module):
-    def __init__(self, nin, nout):
+    def __init__(self, nin, nout, activation='l_relu'):
         super(vgg_layer, self).__init__()
+
+        activations = {
+           'l_relu': nn.LeakyReLU(0.2, inplace=True),
+           'tanh': nn.Tanh()
+        }
+
         self.main = nn.Sequential(
                 nn.Conv2d(nin, nout, 3, 1, 1),
                 nn.BatchNorm2d(nout),
-                nn.LeakyReLU(0.2, inplace=True)
+                activations[activation]
                 )
 
     def forward(self, input):
         return self.main(input)
 
 class Encoder(nn.Module):
-    def __init__(self, dim, nc=1, batch_size=None):
+    def __init__(self, dim, nc=1, batch_size=None,activation='l_relu'):
         super(Encoder, self).__init__()
         self.dim = dim
         self.batch_size = batch_size
         self.nc = nc
         # 64 x 64
         self.c1 = nn.Sequential(
-                vgg_layer(nc, 64),
-                vgg_layer(64, 64),
+                vgg_layer(nc, 64, activation),
+                vgg_layer(64, 64, activation),
                 )
         # 32 x 32
         self.c2 = nn.Sequential(
-                vgg_layer(64, 128),
-                vgg_layer(128, 128),
+                vgg_layer(64, 128, activation),
+                vgg_layer(128, 128, activation),
                 )
         # 16 x 16
         self.c3 = nn.Sequential(
-                vgg_layer(128, 256),
-                vgg_layer(256, 256),
-                vgg_layer(256, 256),
+                vgg_layer(128, 256, activation),
+                vgg_layer(256, 256, activation),
+                vgg_layer(256, 256, activation),
                 )
         # 8 x 8
         self.c4 = nn.Sequential(
-                vgg_layer(256, 512),
-                vgg_layer(512, 512),
-                vgg_layer(512, 512),
+                vgg_layer(256, 512, activation),
+                vgg_layer(512, 512, activation),
+                vgg_layer(512, 512, activation),
                 )
         # 4 x 4
         self.c5 = nn.Sequential(
@@ -82,7 +88,7 @@ class Encoder(nn.Module):
 
 
 class Decoder(nn.Module):
-    def __init__(self, dim, nc=1, batch_size = None):
+    def __init__(self, dim, nc=1, batch_size = None, activation = 'l_relu'):
         super(Decoder, self).__init__()
         self.dim = dim
         self.batch_size = batch_size
@@ -95,24 +101,24 @@ class Decoder(nn.Module):
                 )
         # 8 x 8
         self.upc2 = nn.Sequential(
-                vgg_layer(512*2, 512),
-                vgg_layer(512, 512),
-                vgg_layer(512, 256)
+                vgg_layer(512*2, 512, activation),
+                vgg_layer(512, 512, activation),
+                vgg_layer(512, 256, activation)
                 )
         # 16 x 16
         self.upc3 = nn.Sequential(
-                vgg_layer(256*2, 256),
-                vgg_layer(256, 256),
-                vgg_layer(256, 128)
+                vgg_layer(256*2, 256, activation),
+                vgg_layer(256, 256, activation),
+                vgg_layer(256, 128, activation)
                 )
         # 32 x 32
         self.upc4 = nn.Sequential(
-                vgg_layer(128*2, 128),
-                vgg_layer(128, 64)
+                vgg_layer(128*2, 128, activation),
+                vgg_layer(128, 64, activation)
                 )
         # 64 x 64
         self.upc5 = nn.Sequential(
-                vgg_layer(64*2, 64),
+                vgg_layer(64*2, 64, activation),
                 nn.ConvTranspose2d(64, nc, 3, 1, 1),
                 nn.Sigmoid()
                 )

@@ -34,3 +34,19 @@ def torch_to_numpy(image_tensor):
     numpy_array = np.moveaxis(numpy_array, 0, -1)
 
     return numpy_array
+
+def get_distance(input, target):
+        # Reshape input and target tensors to separate left and right coordinates
+        input_left = input[:, :, :3]  # Extract left coordinates (first 3 elements)
+        input_right = input[:, :, 3:]  # Extract right coordinates (last 3 elements)
+        target_left = target[:, :, :3]  # Extract left coordinates (first 3 elements)
+        target_right = target[:, :, 3:]  # Extract right coordinates (last 3 elements)
+
+        # Compute Euclidean distance between predicted and target coordinates
+        loss_left = torch.sqrt(torch.sum((input_left - target_left) ** 2,dim=2))
+        loss_right = torch.sqrt(torch.sum((input_right - target_right) ** 2,dim=2))
+
+        # Total loss is the sum of left and right losses
+        total_loss = loss_left + loss_right
+
+        return total_loss/2

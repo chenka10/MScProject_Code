@@ -22,6 +22,7 @@ from torch.utils.data import DataLoader
 import os
 import torchvision.transforms as transforms
 import pandas as pd
+from utils import get_distance
 
 
 position_indices = main_config.kinematic_slave_position_indexes
@@ -49,21 +50,6 @@ def get_encoded_frames_gestures(frame_encoder,frames,gestures,batch_size,seq_len
 import torch
 import torch.nn as nn
 
-def get_distance(input, target):
-        # Reshape input and target tensors to separate left and right coordinates
-        input_left = input[:, :, :3]  # Extract left coordinates (first 3 elements)
-        input_right = input[:, :, 3:]  # Extract right coordinates (last 3 elements)
-        target_left = target[:, :, :3]  # Extract left coordinates (first 3 elements)
-        target_right = target[:, :, 3:]  # Extract right coordinates (last 3 elements)
-
-        # Compute Euclidean distance between predicted and target coordinates
-        loss_left = torch.sqrt(torch.sum((input_left - target_left) ** 2,dim=2))
-        loss_right = torch.sqrt(torch.sum((input_right - target_right) ** 2,dim=2))
-
-        # Total loss is the sum of left and right losses
-        total_loss = loss_left + loss_right
-
-        return total_loss/2
 
 class DistanceLoss(nn.Module):
     def __init__(self):
@@ -95,8 +81,8 @@ transform = transforms.Compose([
 
 # Define dataset and dataloaders
 df = pd.read_csv(os.path.join(main_config.get_project_dir(),'jigsaws_all_data_detailed.csv'))
-df_train = df[(df['Subject']=='B') & (df['Repetition']==1)].reset_index(drop=True)
-df_valid = df[(df['Subject']=='B') & (df['Repetition']==1)].reset_index(drop=True)
+df_train = df[(df['Subject']!='C')].reset_index(drop=True)
+df_valid = df[(df['Subject']=='C')].reset_index(drop=True)
 
 dataset_train = ConcatDataset(JigsawsImageDataset(df_train,main_config,past_count+future_count,transform,sample_rate=6),
                         JigsawsGestureDataset(df_train,main_config,past_count+future_count,sample_rate=6),
@@ -184,7 +170,7 @@ for epoch in range(num_epochs):
         loss_tot.backward()
         optimizer.step()
 
-        train_loss += torch.tensor([loss_tot.item(),loss_MSE.item(),loss_KLD.item()])      
+        train_loss += torch.tensor([loss_tot.item(),loss_MSE.item(),loss_KLD.item()])          
         
 
     valid_loss = torch.tensor([0.0,0.0,0.0])
@@ -263,7 +249,7 @@ for epoch in range(num_epochs):
 
     plt.tight_layout()
     fig.savefig('/home/chen/MScProject/Code/experiments/LSTM_AutoEncoder/images/epoch_{}_mover.png'.format(epoch))
-    plt.clos()
+    plt.close()
 
     fig = plt.figure(figsize=(10,4))
     frames_from_past_count = 3

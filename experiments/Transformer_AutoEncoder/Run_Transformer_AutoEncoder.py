@@ -12,6 +12,7 @@ from JigsawsConfig import main_config
 from utils import torch_to_numpy
 from position_encoding import PositionalEncoding
 from TransformerModules import JigsawsFrameEncoder, JigsawsFrameDecoder
+from utils import get_distance
 
 import torch.optim as optim
 from tqdm import tqdm
@@ -53,7 +54,8 @@ position_indices = main_config.kinematic_slave_position_indexes
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(device)
 
-batch_size = 8
+
+batch_size = 4
 num_epochs = 100
 compressed_size = 128
 subjects_num = 8
@@ -63,7 +65,7 @@ seq_len = past_count+future_count
 num_gestures = 16
 transformer_layers = 4
 lr = 0.02
-beta = 0.0001
+beta = 0.000000001
 
 transform = transforms.Compose([
     transforms.ToTensor(),
@@ -87,8 +89,8 @@ dataset_valid = ConcatDataset(JigsawsImageDataset(df_valid,main_config,past_coun
 dataloader_valid = DataLoader(dataset_valid, batch_size=batch_size, shuffle=True)
 
 # Initialize model, loss function, and optimizer
-frame_encoder = Encoder(compressed_size,3).to(device)
-frame_decoder = Decoder(compressed_size,3).to(device)
+frame_encoder = Encoder(compressed_size,3,None,'tanh').to(device)
+frame_decoder = Decoder(compressed_size,3,None,'tanh').to(device)
 
 
 encoder = JigsawsFrameEncoder(compressed_size+num_gestures,4,transformer_layers,compressed_size,0.1).to(device)
@@ -97,6 +99,7 @@ decoder = JigsawsFrameDecoder(compressed_size+num_gestures,4,transformer_layers,
 position_encoder = PositionalEncoding(compressed_size+num_gestures,0,past_count).to(device)
 
 mse = nn.MSELoss()
+mse_non_reduce = nn.MSELoss(reduce=False)
 
 parameters = list(encoder.parameters()) + list(decoder.parameters()) +\
  list(frame_encoder.parameters())+\
@@ -126,11 +129,15 @@ for epoch in range(num_epochs):
         positions = batch[2][:,:,position_indices].to(device)
         batch_size = frames.size(0)
 
+        frame_encoder.batch_size = batch_size
+        frame_decoder.batch_size = batch_size
+
         optimizer.zero_grad()
 
         frames_gestures_past, frames_gestures_future, encoder_skips = get_encoded_frames_gestures(frame_encoder,frames,gestures,batch_size,seq_len)
-        last_encoder_skips = [skip[:,past_count-1,:,:,:].unsqueeze(1).repeat(1,future_count,1,1,1).view(batch_size*future_count,skip.size(-3),skip.size(-2),skip.size(-1)) for skip in encoder_skips]
-        last_encoder_skips = [torch.zeros(skip.shape).to(device) for skip in last_encoder_skips]
+        # last_encoder_skips = [skip[:,past_count-1,:,:,:].view(batch_size*future_count,skip.size(-3),skip.size(-2),skip.size(-1)) for skip in encoder_skips]
+        # last_encoder_skips = [torch.zeros(skip.shape).to(device) for skip in last_encoder_skips]
+        last_encoder_skips = [skip[:,past_count-1,:,:,:] for skip in encoder_skips]
 
         # pass transformer encoder
         encoder_input = position_encoder(frames_gestures_past)
@@ -140,24 +147,24 @@ for epoch in range(num_epochs):
         # pass transformer decoder iteratively
         decoder_input = torch.zeros(batch_size,future_count,compressed_size+num_gestures).to(device)
         decoder_output = None
+        decoded_frames = []
 
         for i in range(future_count):
           if i==0:
             decoder_input[:,i,:compressed_size]=frames_gestures_past[:,-1,:compressed_size]
           else:
-            decoder_input[:,1:i,:compressed_size]=decoder_output[:,:(i-1),:]
+            decoder_input[:,i,:compressed_size]=frame_encoder(decoded_frames[i-1][:,0,:,:,:])[0]
 
           decoder_input[:,:i,compressed_size:] = gestures[:,past_count:(i+past_count),:]
 
           decoder_output,decoder_output_mu,decoder_output_logvar = decoder(position_encoder(decoder_input),encoder_output)
           decoder_output = decoder_output_mu
+          decoded_frames.append(frame_decoder((decoder_output[:,i,:],last_encoder_skips)).unsqueeze(1))
 
-        # decode output frames
-        decoded_frames = decoder_output.view(batch_size*future_count,compressed_size)
-        decoded_frames = frame_decoder((decoded_frames, last_encoder_skips))
-        decoded_frames = decoded_frames.view(batch_size,future_count,decoded_frames.size(-3),decoded_frames.size(-2),decoded_frames.size(-1))
-
-        loss_MSE = mse(decoded_frames, frames[:,past_count:,:,:,:])
+        distance_weight_per_batch = get_distance(positions[:,:-1,:],positions[:,1:,:]).sum(dim=1)/seq_len
+        cat_frames = torch.cat(decoded_frames,dim=1)
+        mse_per_batch = mse_non_reduce(cat_frames, frames[:,past_count:,:,:,:]).sum(-1).sum(-1).sum(-1).sum(-1)
+        loss_MSE = (distance_weight_per_batch*mse_per_batch).mean()
         loss_KDE = beta*kl_criterion_normal(encoder_output_mu,encoder_output_logvar).mean()
 
         loss_tot = loss_MSE + loss_KDE
@@ -166,7 +173,9 @@ for epoch in range(num_epochs):
         optimizer.step()
 
         train_loss += torch.tensor([loss_tot.item(),loss_MSE.item(),loss_KDE.item()])
+        
 
+    torch.cuda.empty_cache()
     valid_loss = 0.0
     for batch in tqdm(dataloader_valid):
         encoder.eval()
@@ -178,9 +187,9 @@ for epoch in range(num_epochs):
         batch_size = frames.size(0)
 
         frames_gestures_past, frames_gestures_future, encoder_skips  = get_encoded_frames_gestures(frame_encoder,frames,gestures,batch_size,seq_len)
-        last_encoder_skips = [skip[:,past_count-1,:,:,:].unsqueeze(1).repeat(1,future_count,1,1,1).view(batch_size*future_count,skip.size(-3),skip.size(-2),skip.size(-1)) for skip in encoder_skips]
-        last_encoder_skips = [torch.zeros(skip.shape).to(device) for skip in last_encoder_skips]
-
+        # last_encoder_skips = [skip[:,past_count-1,:,:,:].unsqueeze(1).repeat(1,future_count,1,1,1).view(batch_size*future_count,skip.size(-3),skip.size(-2),skip.size(-1)) for skip in encoder_skips]
+        # last_encoder_skips = [torch.zeros(skip.shape).to(device) for skip in last_encoder_skips]
+        last_encoder_skips = [skip[:,past_count-1,:,:,:] for skip in encoder_skips]
 
         # pass transformer encoder
         encoder_input = position_encoder(frames_gestures_past)
@@ -190,28 +199,31 @@ for epoch in range(num_epochs):
         # pass transformer decoder iteratively
         decoder_input = torch.zeros(batch_size,future_count,compressed_size+num_gestures).to(device)
         decoder_output = None
+        decoded_frames = []
 
         for i in range(future_count):
           if i==0:
             decoder_input[:,i,:compressed_size]=frames_gestures_past[:,-1,:compressed_size]
           else:
-            decoder_input[:,1:i,:compressed_size]=decoder_output[:,:(i-1),:]
+            decoder_input[:,i,:compressed_size]=frame_encoder(decoded_frames[i-1][:,0,:,:,:])[0]
 
           decoder_input[:,:i,compressed_size:] = gestures[:,past_count:(i+past_count),:]
 
           decoder_output,decoder_output_mu,decoder_output_logvar = decoder(position_encoder(decoder_input),encoder_output)
           decoder_output = decoder_output_mu
+          decoded_frames.append(frame_decoder((decoder_output[:,i,:],last_encoder_skips)).unsqueeze(1))
 
 
         # decode output frames
-        decoded_frames = decoder_output.view(batch_size*future_count,compressed_size)
-        decoded_frames = frame_decoder((decoded_frames, last_encoder_skips))
-        decoded_frames = decoded_frames.view(batch_size,future_count,decoded_frames.size(-3),decoded_frames.size(-2),decoded_frames.size(-1))
+        # decoded_frames = decoder_output.view(batch_size*future_count,compressed_size)
+        # decoded_frames = frame_decoder((decoded_frames, last_encoder_skips))
+        # decoded_frames = decoded_frames.view(batch_size,future_count,decoded_frames.size(-3),decoded_frames.size(-2),decoded_frames.size(-1))
 
-        loss = mse(decoded_frames, frames[:,past_count:,:,:,:])
+        cat_frames = torch.cat(decoded_frames,dim=1)
+        loss = mse(cat_frames, frames[:,past_count:,:,:,:])
         valid_loss += loss.item()
-
-
+        break
+        
 
     os.makedirs('/home/chen/MScProject/Code/experiments/Transformer_AutoEncoder/images/',exist_ok=True)
 
@@ -219,7 +231,7 @@ for epoch in range(num_epochs):
     frames_from_past_count = 3
     for i in range(future_count):
       plt.subplot(2,future_count+frames_from_past_count,frames_from_past_count+i+1)
-      plt.imshow(torch_to_numpy(decoded_frames[0,i,:,:,:].detach()))
+      plt.imshow(torch_to_numpy(decoded_frames[i][0,0,:,:,:].detach()))
       plt.xticks([])
       plt.yticks([])
     for i in range(future_count+frames_from_past_count):
@@ -232,6 +244,7 @@ for epoch in range(num_epochs):
 
     plt.tight_layout()
     fig.savefig('/home/chen/MScProject/Code/experiments/Transformer_AutoEncoder/images/epoch_{}.png'.format(epoch))
+    plt.close()
 
     train_loss /= len(dataloader_train)
     valid_loss /= len(dataloader_valid)

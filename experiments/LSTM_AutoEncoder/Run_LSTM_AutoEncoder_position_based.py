@@ -3,6 +3,8 @@ sys.path.append('/home/chen/MScProject/Code/')
 sys.path.append('/home/chen/MScProject/Code/Jigsaws/')
 sys.path.append('/home/chen/MScProject/Code/models/')
 
+models_dir = '/home/chen/MScProject/Code/experiments/LSTM_AutoEncoder/models_position_based/' 
+
 from JigsawsKinematicsDataset import JigsawsKinematicsDataset
 from JigsawsImageDataset import JigsawsImageDataset
 from JigsawsGestureDataset import JigsawsGestureDataset
@@ -51,9 +53,12 @@ past_count = 10
 future_count = 10
 seq_len = past_count+future_count
 num_gestures = 16
+added_vec_size = 24
 transformer_layers = 4
 lr = 0.0002
 beta = 0.0001
+
+start_epoch = 16
 
 transform = transforms.Compose([
     transforms.ToTensor()
@@ -77,9 +82,14 @@ dataloader_valid = DataLoader(dataset_valid, batch_size=batch_size, shuffle=True
 # Initialize model, loss function, and optimizer
 frame_encoder = Encoder(img_compressed_size,3).to(device)
 frame_decoder = Decoder(img_compressed_size,3).to(device)
-
 prior_lstm = gaussian_lstm(img_compressed_size,prior_size,256,1,batch_size).to(device)
-generation_lstm = lstm(img_compressed_size + prior_size + num_gestures,img_compressed_size,256,2,batch_size).to(device)
+generation_lstm = lstm(img_compressed_size + prior_size + added_vec_size,img_compressed_size,256,2,batch_size).to(device)
+
+if start_epoch > 0:
+   frame_encoder.load_state_dict(torch.load(os.path.join(models_dir,'frame_encoder.pth')))
+   frame_decoder.load_state_dict(torch.load(os.path.join(models_dir,'frame_decoder.pth')))
+   prior_lstm.load_state_dict(torch.load(os.path.join(models_dir,'prior_lstm.pth')))
+   generation_lstm.load_state_dict(torch.load(os.path.join(models_dir,'generation_lstm.pth')))
 
 mse = nn.MSELoss(reduce=False)
 
@@ -93,9 +103,16 @@ models = [
 parameters = sum([list(model.parameters()) for model in models],[])
 optimizer = optim.Adam(parameters, lr=lr)
 
+def expand_positions(positions):
+   positions = positions.repeat(1,1,4)
+   pos_multiplier = torch.tensor([1,1,1,1,1,1,10,10,10,10,10,10,100,100,100,100,100,100,1000,1000,1000,1000,1000,1000]).to(device)
+
+   positions = positions*pos_multiplier
+
+   return positions
 
 # Training loop
-for epoch in range(num_epochs):
+for epoch in range(start_epoch, num_epochs):
 
     for model in models:
       model.train()
@@ -106,6 +123,7 @@ for epoch in range(num_epochs):
         frames = batch[0].to(device)
         gestures = torch.nn.functional.one_hot(batch[1],num_gestures).to(device)
         positions = batch[2][:,:,position_indices].to(device)
+        positions_expanded = expand_positions(positions)
         batch_size = frames.size(0)
 
         # prepare lstms for batch
@@ -134,8 +152,8 @@ for epoch in range(num_epochs):
           else:
             frames_t_minus_one = seq[i-1][0]          
 
-          z,mu,logvar = prior_lstm(frames_t)
-          frames_to_decode = generation_lstm(torch.cat([frames_t_minus_one,z,gestures[:,i,:]],dim=-1))
+          z,mu,logvar = prior_lstm(frames_t_minus_one)
+          frames_to_decode = generation_lstm(torch.cat([frames_t_minus_one,z,positions_expanded[:,i,:]],dim=-1))
           decoded_frames = frame_decoder([frames_to_decode,skips])
           generated_seq.append(decoded_frames)
           
@@ -159,6 +177,7 @@ for epoch in range(num_epochs):
         frames = batch[0].to(device)
         gestures = torch.nn.functional.one_hot(batch[1],num_gestures).to(device)
         positions = batch[2][:,:,position_indices].to(device)
+        positions_expanded = expand_positions(positions)
         batch_size = frames.size(0)
 
         for model in models:
@@ -179,8 +198,8 @@ for epoch in range(num_epochs):
         loss_KLD = torch.tensor(0.0).to(device)        
 
         distance_weight = get_distance(positions[:,:-1,:],positions[:,1:,:])
-        batch_mover = distance_weight[:,past_count:,:].sum(dim=1).argmax().item()
-        batch_least_mover = distance_weight[:,past_count:,:].sum(dim=1).argmin().item()
+        batch_mover = distance_weight[:,past_count:].sum(dim=1).argmax().item()
+        batch_least_mover = distance_weight[:,past_count:].sum(dim=1).argmin().item()
         distance_weight = distance_weight.sum(dim=1)/seq_len
 
         for i in range(1,seq_len):
@@ -195,8 +214,8 @@ for epoch in range(num_epochs):
             frames_t = frame_encoder(decoded_frames)[0]
             frames_t_minus_one = frames_t
           
-          z,mu,logvar = prior_lstm(frames_t)
-          frames_to_decode = generation_lstm(torch.cat([frames_t_minus_one,z,gestures[:,i,:]],dim=-1))
+          z,mu,logvar = prior_lstm(frames_t_minus_one)
+          frames_to_decode = generation_lstm(torch.cat([frames_t_minus_one,z,positions_expanded[:,i,:]],dim=-1))
           decoded_frames = frame_decoder([frames_to_decode,skips])
 
           generated_seq.append(decoded_frames)
@@ -211,7 +230,13 @@ for epoch in range(num_epochs):
         valid_loss += torch.tensor([loss_tot.item(),loss_MSE.item(),loss_KLD.item()])
         break
 
-    os.makedirs('/home/chen/MScProject/Code/experiments/LSTM_AutoEncoder/images/',exist_ok=True)
+    os.makedirs('/home/chen/MScProject/Code/experiments/LSTM_AutoEncoder/images_positions_based_2/',exist_ok=True)    
+    os.makedirs(models_dir,exist_ok=True)
+
+    torch.save(frame_encoder.state_dict(),os.path.join(models_dir,'frame_encoder.pth'))
+    torch.save(frame_decoder.state_dict(),os.path.join(models_dir,'frame_decoder.pth'))
+    torch.save(generation_lstm.state_dict(),os.path.join(models_dir,'generation_lstm.pth'))
+    torch.save(prior_lstm.state_dict(),os.path.join(models_dir,'prior_lstm.pth'))
 
     fig = plt.figure(figsize=(10,4))
     frames_from_past_count = 3
@@ -229,7 +254,7 @@ for epoch in range(num_epochs):
       plt.yticks([])
 
     plt.tight_layout()
-    fig.savefig('/home/chen/MScProject/Code/experiments/LSTM_AutoEncoder/images/epoch_{}_mover.png'.format(epoch))
+    fig.savefig('/home/chen/MScProject/Code/experiments/LSTM_AutoEncoder/images_positions_based_2/epoch_{}_mover.png'.format(epoch))
     plt.close()
 
     fig = plt.figure(figsize=(10,4))
@@ -248,7 +273,7 @@ for epoch in range(num_epochs):
       plt.yticks([])
 
     plt.tight_layout()
-    fig.savefig('/home/chen/MScProject/Code/experiments/LSTM_AutoEncoder/images/epoch_{}_nonMover.png'.format(epoch))
+    fig.savefig('/home/chen/MScProject/Code/experiments/LSTM_AutoEncoder/images_positions_based_2/epoch_{}_nonMover.png'.format(epoch))
     plt.close()
 
     train_loss /= len(dataloader_train)

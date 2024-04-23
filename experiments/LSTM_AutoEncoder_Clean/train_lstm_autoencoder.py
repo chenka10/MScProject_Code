@@ -87,12 +87,12 @@ def train(models, dataloader_train, optimizer, params, device):
         ssim_per_batch = ssim(decoded_frames, frames[:,t,:,:,:],data_range=1, size_average=False)
         ssim_per_future_frame[t-params['past_count']] += (ssim_per_batch.mean().item())
 
-    loss_tot = loss_MSE + loss_KLD
+    loss_tot = loss_MSE + params['beta']*loss_KLD
 
     loss_tot.backward()
     optimizer.step()
 
-    loss += torch.tensor([loss_tot.item(),loss_MSE.item(),loss_KLD.item()])  
+    loss += torch.tensor([loss_tot.item(),loss_MSE.item(),loss_KLD.item()])      
 
   loss /= len(dataloader_train)
   ssim_per_future_frame /= len(dataloader_train)

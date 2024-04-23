@@ -27,6 +27,8 @@ from utils import get_distance
 import io
 from PIL import Image
 
+from datetime import datetime
+
 
 
 position_indices = main_config.kinematic_slave_position_indexes
@@ -49,6 +51,9 @@ class DistanceLoss(nn.Module):
 device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 print(device)
 
+df = pd.read_csv(os.path.join(main_config.get_project_dir(),'jigsaws_all_data_detailed.csv'))
+df_train = df[(df['Subject']!='C')].reset_index(drop=True)
+df_valid = df[(df['Subject']=='C')].reset_index(drop=True)
 
 params = {
    'batch_size': 8,
@@ -72,10 +77,13 @@ elif params['conditioning'] == 'gesture':
 else:
    raise ValueError()
 
+params['train_subjects'] = df_train['Subject'].unique()
+params['train_repetitions'] = df_train['Repetition'].unique()
+params['valid_subjects'] = df_valid['Subject'].unique()
+params['valid_repetitions'] = df_valid['Repetition'].unique()
+
 start_epoch = 0
-
 use_wandb = True
-
 if use_wandb:
   wandb.init(
      project = 'Robotic Surgery MSc',
@@ -86,9 +94,11 @@ if use_wandb:
 else:
   runid = 3
 
-models_dir_load = '/home/chen/MScProject/Code/experiments/LSTM_AutoEncoder/models_position_based_1dce9ka6/'
-models_dir = f'/home/chen/MScProject/Code/experiments/LSTM_AutoEncoder_Clean/models_{params['conditioning']}/models_{runid}/'
-images_dir = f'/home/chen/MScProject/Code/experiments/LSTM_AutoEncoder_Clean/images_{params['conditioning']}/images_{runid}/'
+now = datetime.now()
+timestamp = now.strftime("%Y%m%d_%H%M%S")  # Format: YYYYMMDD_HHMMSS
+
+models_dir = f'/home/chen/MScProject/Code/experiments/LSTM_AutoEncoder_Clean/models_{params['conditioning']}/models_{timestamp}_{runid}/'
+images_dir = f'/home/chen/MScProject/Code/experiments/LSTM_AutoEncoder_Clean/images_{params['conditioning']}/images_{timestamp}_{runid}/'
 os.makedirs(images_dir,exist_ok=True)    
 os.makedirs(models_dir,exist_ok=True)
 
@@ -96,10 +106,6 @@ os.makedirs(models_dir,exist_ok=True)
 transform = transforms.Compose([
     transforms.ToTensor()
 ])
-
-df = pd.read_csv(os.path.join(main_config.get_project_dir(),'jigsaws_all_data_detailed.csv'))
-df_train = df[(df['Subject']!='D')].reset_index(drop=True)
-df_valid = df[(df['Subject']=='D')].reset_index(drop=True)
 
 dataset_train = ConcatDataset(JigsawsImageDataset(df_train,main_config,params['past_count']+params['future_count'],transform,sample_rate=6),
                         JigsawsGestureDataset(df_train,main_config,params['past_count']+params['future_count'],sample_rate=6),
@@ -116,12 +122,6 @@ frame_encoder = Encoder(params['img_compressed_size'],3).to(device)
 frame_decoder = Decoder(params['img_compressed_size'],3).to(device)
 prior_lstm = gaussian_lstm(params['img_compressed_size'],params['prior_size'],256,1,params['batch_size'],device).to(device)
 generation_lstm = lstm(params['img_compressed_size'] + params['prior_size'] + params['added_vec_size'],params['img_compressed_size'],256,2,params['batch_size'],device).to(device)
-
-if start_epoch > 0:
-   frame_encoder.load_state_dict(torch.load(os.path.join(models_dir_load,'frame_encoder.pth')))
-   frame_decoder.load_state_dict(torch.load(os.path.join(models_dir_load,'frame_decoder.pth')))
-   prior_lstm.load_state_dict(torch.load(os.path.join(models_dir_load,'prior_lstm.pth')))
-   generation_lstm.load_state_dict(torch.load(os.path.join(models_dir_load,'generation_lstm.pth')))
 
 mse = nn.MSELoss(reduce=False)
 
@@ -190,13 +190,7 @@ for epoch in range(start_epoch, params['num_epochs']):
 
   plt.tight_layout()
   fig.savefig(os.path.join(images_dir,'epoch_{}_nonMover.png').format(epoch))
-  plt.close()
-
-  train_loss /= len(dataloader_train)
-  valid_loss /= len(dataloader_valid)
-
-  train_ssim_per_future_frame /= len(dataloader_train)
-  valid_ssim_per_future_frame /= len(dataloader_valid)
+  plt.close() 
 
   print('Epoch {}: train loss {}'.format(epoch,train_loss.tolist()))
   print('Epoch {}: valid loss {}'.format(epoch,valid_loss.tolist()))    
@@ -212,7 +206,7 @@ for epoch in range(start_epoch, params['num_epochs']):
         
     data_to_log['train_MSE'] = train_loss[1].item()
     data_to_log['valid_MSE'] = valid_loss[1].item()
-    data_to_log['image'] = wandb.Image(image, caption=f"epoch {epoch}")
+    data_to_log['image'] = wandb.Image(image, caption=f"epoch {epoch}")    
     wandb.log(data_to_log)       
 
 

@@ -24,6 +24,8 @@ import torchvision.transforms as transforms
 import pandas as pd
 from utils import get_distance
 
+models_dir = '/home/chen/MScProject/Code/experiments/LSTM_AutoEncoder/models_gesture_based/' 
+images_dir = '/home/chen/MScProject/Code/experiments/LSTM_AutoEncoder/images_gesture_based/'
 
 position_indices = main_config.kinematic_slave_position_indexes
 
@@ -81,6 +83,14 @@ frame_decoder = Decoder(img_compressed_size,3).to(device)
 prior_lstm = gaussian_lstm(img_compressed_size,prior_size,256,1,batch_size).to(device)
 generation_lstm = lstm(img_compressed_size + prior_size + num_gestures,img_compressed_size,256,2,batch_size).to(device)
 
+start_epoch = 0
+
+if start_epoch > 0:
+   frame_encoder.load_state_dict(torch.load(os.path.join(models_dir,'frame_encoder.pth')))
+   frame_decoder.load_state_dict(torch.load(os.path.join(models_dir,'frame_decoder.pth')))
+   prior_lstm.load_state_dict(torch.load(os.path.join(models_dir,'prior_lstm.pth')))
+   generation_lstm.load_state_dict(torch.load(os.path.join(models_dir,'generation_lstm.pth')))
+
 mse = nn.MSELoss(reduce=False)
 
 models = [
@@ -95,7 +105,7 @@ optimizer = optim.Adam(parameters, lr=lr)
 
 
 # Training loop
-for epoch in range(num_epochs):
+for epoch in range(start_epoch, num_epochs):
 
     for model in models:
       model.train()
@@ -179,8 +189,8 @@ for epoch in range(num_epochs):
         loss_KLD = torch.tensor(0.0).to(device)        
 
         distance_weight = get_distance(positions[:,:-1,:],positions[:,1:,:])
-        batch_mover = distance_weight[:,past_count:,:].sum(dim=1).argmax().item()
-        batch_least_mover = distance_weight[:,past_count:,:].sum(dim=1).argmin().item()
+        batch_mover = distance_weight[:,past_count:].sum(dim=1).argmax().item()
+        batch_least_mover = distance_weight[:,past_count:].sum(dim=1).argmin().item()
         distance_weight = distance_weight.sum(dim=1)/seq_len
 
         for i in range(1,seq_len):
@@ -211,7 +221,15 @@ for epoch in range(num_epochs):
         valid_loss += torch.tensor([loss_tot.item(),loss_MSE.item(),loss_KLD.item()])
         break
 
-    os.makedirs('/home/chen/MScProject/Code/experiments/LSTM_AutoEncoder/images/',exist_ok=True)
+    
+    os.makedirs(models_dir,exist_ok=True)
+    torch.save(frame_encoder.state_dict(),os.path.join(models_dir,'frame_encoder.pth'))
+    torch.save(frame_decoder.state_dict(),os.path.join(models_dir,'frame_decoder.pth'))
+    torch.save(generation_lstm.state_dict(),os.path.join(models_dir,'generation_lstm.pth'))
+    torch.save(prior_lstm.state_dict(),os.path.join(models_dir,'prior_lstm.pth'))
+
+
+    os.makedirs(images_dir,exist_ok=True)
 
     fig = plt.figure(figsize=(10,4))
     frames_from_past_count = 3
@@ -229,7 +247,7 @@ for epoch in range(num_epochs):
       plt.yticks([])
 
     plt.tight_layout()
-    fig.savefig('/home/chen/MScProject/Code/experiments/LSTM_AutoEncoder/images/epoch_{}_mover.png'.format(epoch))
+    fig.savefig(images_dir + 'epoch_{}_mover.png'.format(epoch))
     plt.close()
 
     fig = plt.figure(figsize=(10,4))
@@ -248,7 +266,7 @@ for epoch in range(num_epochs):
       plt.yticks([])
 
     plt.tight_layout()
-    fig.savefig('/home/chen/MScProject/Code/experiments/LSTM_AutoEncoder/images/epoch_{}_nonMover.png'.format(epoch))
+    fig.savefig(images_dir + 'epoch_{}_nonMover.png'.format(epoch))
     plt.close()
 
     train_loss /= len(dataloader_train)

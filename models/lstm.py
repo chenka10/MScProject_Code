@@ -1,11 +1,12 @@
 import torch.nn as nn
 import torch
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class lstm(nn.Module):
-    def __init__(self, input_size, output_size, hidden_size, n_layers, batch_size):
+    def __init__(self, input_size, output_size, hidden_size, n_layers, batch_size, device):
         super(lstm, self).__init__()
+        self.device = device
         self.input_size = input_size
         self.output_size = output_size
         self.hidden_size = hidden_size
@@ -22,8 +23,8 @@ class lstm(nn.Module):
     def init_hidden(self):        
         hidden = []
         for i in range(self.n_layers):
-            hidden.append((torch.zeros(self.batch_size, self.hidden_size).to(device),
-                           torch.zeros(self.batch_size, self.hidden_size).to(device)))
+            hidden.append((torch.zeros(self.batch_size, self.hidden_size).to(self.device),
+                           torch.zeros(self.batch_size, self.hidden_size).to(self.device)))
         return hidden
 
     def forward(self, input):
@@ -36,8 +37,9 @@ class lstm(nn.Module):
         return self.output(h_in)
 
 class gaussian_lstm(nn.Module):
-    def __init__(self, input_size, output_size, hidden_size, n_layers, batch_size):
+    def __init__(self, input_size, output_size, hidden_size, n_layers, batch_size, device):
         super(gaussian_lstm, self).__init__()
+        self.device = device
         self.input_size = input_size
         self.output_size = output_size
         self.hidden_size = hidden_size
@@ -52,13 +54,13 @@ class gaussian_lstm(nn.Module):
     def init_hidden(self):        
         hidden = []
         for i in range(self.n_layers):
-            hidden.append((torch.zeros(self.batch_size, self.hidden_size).to(device),
-                           torch.zeros(self.batch_size, self.hidden_size).to(device)))
+            hidden.append((torch.zeros(self.batch_size, self.hidden_size).to(self.device),
+                           torch.zeros(self.batch_size, self.hidden_size).to(self.device)))
         return hidden
 
     def reparameterize(self, mu, logvar):
         logvar = logvar.mul(0.5).exp_()
-        eps = logvar.data.new(logvar.size()).normal_().to(device)
+        eps = logvar.data.new(logvar.size()).normal_().to(self.device)
         return eps.mul(logvar).add_(mu)
 
     def forward(self, input):

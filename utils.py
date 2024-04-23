@@ -50,3 +50,11 @@ def get_distance(input, target):
         total_loss = loss_left + loss_right
 
         return total_loss/2
+
+def expand_positions(positions):
+   positions = positions.repeat(1,1,4)
+   pos_multiplier = torch.tensor([1,1,1,1,1,1,10,10,10,10,10,10,100,100,100,100,100,100,1000,1000,1000,1000,1000,1000]).to(positions.device)
+
+   positions = positions*pos_multiplier
+
+   return positions

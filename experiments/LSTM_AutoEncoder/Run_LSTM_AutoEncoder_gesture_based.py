@@ -48,7 +48,7 @@ class DistanceLoss(nn.Module):
         return get_distance(input, target).mean()
 
 # Set device
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 print(device)
 
 
@@ -64,9 +64,16 @@ params = {
    'added_vec_size': 24,
    'lr': 0.0005,
    'beta': 0.001, 
-   'fixed_prior':False
+   'fixed_prior':False,
+   'conditioning':'gesture' #'position'
 }
 params['seq_len'] = params['past_count'] + params['future_count']
+if params['conditioning'] == 'position':
+   params['added_vec_size'] = 24
+elif params['conditioning'] == 'gesture':
+   params['added_vec_size'] = 16
+else:
+   raise ValueError()
 
 start_epoch = 0
 
@@ -76,15 +83,15 @@ if use_wandb:
   wandb.init(
      project = 'Robotic Surgery MSc',
      config = params,
-     group = 'Next Frame Prediction - Position Conditioned (Stochastic inference)',     
+     group = f'Next Frame Prediction - {params['conditioning']} Conditioned (Stochastic inference)',     
   )
   runid = wandb.run.id
 else:
   runid = 3
 
 models_dir_load = '/home/chen/MScProject/Code/experiments/LSTM_AutoEncoder/models_position_based_1dce9ka6/'
-models_dir = '/home/chen/MScProject/Code/experiments/LSTM_AutoEncoder/models_position_based_{}/'.format(runid)
-images_dir = '/home/chen/MScProject/Code/experiments/LSTM_AutoEncoder/images_position_based_{}/'.format(runid)
+models_dir = f'/home/chen/MScProject/Code/experiments/LSTM_AutoEncoder/models_{params['conditioning']}/models_{runid}/'
+images_dir = f'/home/chen/MScProject/Code/experiments/LSTM_AutoEncoder/images_{params['conditioning']}/images_{runid}/'
 os.makedirs(images_dir,exist_ok=True)    
 os.makedirs(models_dir,exist_ok=True)
 
@@ -110,8 +117,8 @@ dataloader_valid = DataLoader(dataset_valid, batch_size=params['batch_size'], sh
 # Initialize model, loss function, and optimizer
 frame_encoder = Encoder(params['img_compressed_size'],3).to(device)
 frame_decoder = Decoder(params['img_compressed_size'],3).to(device)
-prior_lstm = gaussian_lstm(params['img_compressed_size'],params['prior_size'],256,1,params['batch_size']).to(device)
-generation_lstm = lstm(params['img_compressed_size'] + params['prior_size'] + params['added_vec_size'],params['img_compressed_size'],256,2,params['batch_size']).to(device)
+prior_lstm = gaussian_lstm(params['img_compressed_size'],params['prior_size'],256,1,params['batch_size'],device).to(device)
+generation_lstm = lstm(params['img_compressed_size'] + params['prior_size'] + params['added_vec_size'],params['img_compressed_size'],256,2,params['batch_size'],device).to(device)
 
 if start_epoch > 0:
    frame_encoder.load_state_dict(torch.load(os.path.join(models_dir_load,'frame_encoder.pth')))
@@ -139,7 +146,7 @@ def expand_positions(positions):
 
    return positions
 
-# Training loop
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Training loop ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 for epoch in range(start_epoch, params['num_epochs']):
 
     for model in models:
@@ -181,7 +188,13 @@ for epoch in range(start_epoch, params['num_epochs']):
             frames_t_minus_one = seq[i-1][0]          
 
           z,mu,logvar = prior_lstm(frames_t_minus_one)
-          frames_to_decode = generation_lstm(torch.cat([frames_t_minus_one,z,positions_expanded[:,i,:]],dim=-1))
+
+          if params['conditioning'] == 'position':
+            conditioning_vec = positions_expanded[:,i,:]
+          elif params['conditioning'] == 'gesture':
+            conditioning_vec = gestures[:,i,:]
+
+          frames_to_decode = generation_lstm(torch.cat([frames_t_minus_one,z,conditioning_vec],dim=-1))
           decoded_frames = frame_decoder([frames_to_decode,skips])
 
           generated_seq.append(decoded_frames)      
@@ -202,6 +215,8 @@ for epoch in range(start_epoch, params['num_epochs']):
 
         train_loss += torch.tensor([loss_tot.item(),loss_MSE.item(),loss_KLD.item()])                 
         # break
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Validation Loop ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
     valid_loss = torch.tensor([0.0,0.0,0.0])
     valid_ssim_per_future_frame = torch.zeros((params['future_count']))
@@ -253,7 +268,13 @@ for epoch in range(start_epoch, params['num_epochs']):
             z,mu,logvar = prior_lstm(frames_t_minus_one)
           else:
             z = torch.randn(batch_size,params['prior_size']).to(device)
-          frames_to_decode = generation_lstm(torch.cat([frames_t_minus_one,z,positions_expanded[:,i,:]],dim=-1))
+
+          if params['conditioning'] == 'position':
+            conditioning_vec = positions_expanded[:,i,:]
+          elif params['conditioning'] == 'gesture':
+            conditioning_vec = gestures[:,i,:]
+
+          frames_to_decode = generation_lstm(torch.cat([frames_t_minus_one,z,conditioning_vec],dim=-1))
           decoded_frames = frame_decoder([frames_to_decode,skips])
 
           generated_seq.append(decoded_frames)

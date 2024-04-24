@@ -3,8 +3,10 @@ from pytorch_msssim import ssim
 from tqdm import tqdm
 from losses import kl_criterion_normal
 from utils import get_distance, expand_positions
+from Jigsaws.JigsawsUtils import jigsaws_to_quaternions
 
 position_indices = main_config.kinematic_slave_position_indexes
+rotation_indices = main_config.kinematic_slave_rotation_indexes
 
 import torch
 import torch.nn as nn
@@ -28,8 +30,13 @@ def train(models, dataloader_train, optimizer, params, device):
     # load batch data
     frames = batch[0].to(device)
     gestures = torch.nn.functional.one_hot(batch[1],params['num_gestures']).to(device)
-    positions = batch[2][:,:,position_indices].to(device)
+    positions = batch[2][:,:,position_indices].to(device)    
     positions_expanded = expand_positions(positions)
+    rotations = batch[2][:,:,rotation_indices].to(device) 
+    rotations = jigsaws_to_quaternions(rotations)   
+
+    kinematics = torch.concat([positions_expanded,rotations],dim=-1)
+
     batch_size = frames.size(0)    
 
     # prepare lstms for batch (set internal batch-size and set default hidden state)
@@ -68,12 +75,17 @@ def train(models, dataloader_train, optimizer, params, device):
 
       # load condition data of current frame
       if params['conditioning'] == 'position':
-        conditioning_vec = positions_expanded[:,t,:]
+        conditioning_vec = kinematics[:,t,:]
       elif params['conditioning'] == 'gesture':
         conditioning_vec = gestures[:,t,:]
 
       # predict next frame latent, decode next frame, store next frame
       frames_to_decode = generation_lstm(torch.cat([frames_t_minus_one,z,conditioning_vec],dim=-1))
+
+      contains_nan = torch.isnan(frames_to_decode).any().item()
+      if contains_nan:
+        raise ValueError('frames to decode contains NaN')
+
       decoded_frames = frame_decoder([frames_to_decode,skips])
       generated_seq.append(decoded_frames)      
 

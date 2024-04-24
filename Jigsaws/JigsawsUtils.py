@@ -2,9 +2,10 @@ from JigsawsConfig import JigsawsConfig
 from torchvision.io import read_image
 import os
 import numpy as np
-from utils import utils_find_series_in_arr
+from utils import flatRotMat_to_quaternion
 import pandas as pd
 from PIL import Image
+import torch
 
 def jigsaws_get_extracted_frame(config: JigsawsConfig, frame_index_orig, task_id, subject, repetition):
   task_name = config.get_task_name(task_id)
@@ -71,3 +72,9 @@ def jigsaws_get_gestures(config: JigsawsConfig, task_id,subject,repetition):
     gestures_per_frame = gestures[np.searchsorted(gestures_frames,frames+1)]
     config.gestures_storage.add_entry(gestures_per_frame,task_id,subject,repetition)
     return gestures_per_frame
+  
+def jigsaws_to_quaternions(flat_rot_mats):
+  q1 = flatRotMat_to_quaternion(flat_rot_mats[:,:,:9])
+  q2 = flatRotMat_to_quaternion(flat_rot_mats[:,:,9:])
+
+  return torch.concat([q1,q2],dim=-1)  

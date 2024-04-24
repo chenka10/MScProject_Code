@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+import math
 
 def utils_find_series_in_arr(arr,series):
     series_len = series.shape[0]
@@ -58,3 +59,25 @@ def expand_positions(positions):
    positions = positions*pos_multiplier
 
    return positions
+
+def flatRotMat_to_quaternion(flat_rot_mat: torch.Tensor):
+  '''
+  This function is intended to work with batch of sequences.  
+  So, input size is [batch_size, seq_len, 9]
+
+  Output size is [batch_size, seq_len, 4]
+  '''
+  R = flat_rot_mat.reshape(flat_rot_mat.shape[0],flat_rot_mat.shape[1],3,3)
+
+  epsilon = 10**-6
+
+  q0 = 0.5*torch.sqrt(1+ R[:,:,0,0] + R[:,:,1,1] + R[:,:,2,2] + epsilon)
+  q1 = (R[:,:,2, 1] - R[:,:,1, 2]) / (4 * q0)
+  q2 = (R[:,:,0, 2] - R[:,:,2, 0]) / (4 * q0)
+  q3 = (R[:,:,1, 0] - R[:,:,0, 1]) / (4 * q0)
+
+  if torch.isinf(q1).any().item():
+      raise ValueError('q1 contains infinite values')
+
+
+  return torch.stack([q0, q1, q2, q3],dim=-1)

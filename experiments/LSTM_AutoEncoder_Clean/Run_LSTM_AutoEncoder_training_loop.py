@@ -48,7 +48,7 @@ class DistanceLoss(nn.Module):
         return get_distance(input, target).mean()
 
 # Set device
-device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(device)
 
 df = pd.read_csv(os.path.join(main_config.get_project_dir(),'jigsaws_all_data_detailed.csv'))
@@ -63,15 +63,14 @@ params = {
    'subjects_num': 8,
    'past_count': 10,
    'future_count': 10,
-   'num_gestures': 16,
-   'added_vec_size': 24,
+   'num_gestures': 16,   
    'lr': 0.0005,
    'beta': 0.001,    
    'conditioning':'position' #'gesture'
 }
 params['seq_len'] = params['past_count'] + params['future_count']
 if params['conditioning'] == 'position':
-   params['added_vec_size'] = 24
+   params['added_vec_size'] = 32
 elif params['conditioning'] == 'gesture':
    params['added_vec_size'] = 16
 else:
@@ -88,7 +87,7 @@ if use_wandb:
   wandb.init(
      project = 'Robotic Surgery MSc',
      config = params,
-     group = f'Next Frame Prediction - {params['conditioning']} Conditioned (Stochastic inference)',     
+     group = f'Next Frame Prediction - {params['conditioning']} Conditioned (with rotation) (Stochastic inference)',     
   )
   runid = wandb.run.id
 else:

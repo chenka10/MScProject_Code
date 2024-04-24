@@ -45,6 +45,8 @@ class JigsawsConfig():
        'both':slice(0,39)
     }
     self.kinematic_slave_position_indexes = [38,39,40,57,58,59]
+    self.kinematic_slave_rotation_indexes = [41,42,43,44,45,46,47,48,49,60,61,62,63,64,65,66,67,68]
+
     self.kinematic_master_position_indexes = [0, 1, 2, 19, 20, 21]
     self.kinematics_df_storage = JigsawsStorage()
     self.gestures_storage = JigsawsStorage()

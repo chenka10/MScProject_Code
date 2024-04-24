@@ -6,35 +6,16 @@ sys.path.append('/home/chen/MScProject/Code/models/')
 import wandb
 wandb.login(key = '33514858884adc0292c3f8be3706845a1db35d3a')
 
-from JigsawsKinematicsDataset import JigsawsKinematicsDataset
-from JigsawsImageDataset import JigsawsImageDataset
-from JigsawsGestureDataset import JigsawsGestureDataset
-from JigsawsDatasetBase import JigsawsMetaDataset, ConcatDataset
 from JigsawsConfig import main_config
-from utils import torch_to_numpy
-import matplotlib.pyplot as plt
-
+from Jigsaws.JigsawsUtils import jigsaws_to_quaternions
 from pytorch_msssim import ssim
-
-import torch.optim as optim
 from tqdm import tqdm
-from torchModules import BasicFc
-from torchvision import models as tv_models
-from vgg import Encoder, Decoder
-from lstm import gaussian_lstm, lstm
+
 from losses import kl_criterion_normal
-from torch.utils.data import DataLoader
-import os
-import torchvision.transforms as transforms
-import pandas as pd
 from utils import get_distance, expand_positions
-import io
-from PIL import Image
-
-import statistics
-
 
 position_indices = main_config.kinematic_slave_position_indexes
+rotation_indices = main_config.kinematic_slave_rotation_indexes
 
 import torch
 import torch.nn as nn
@@ -55,6 +36,11 @@ def validate(models, dataloader_valid, params, device):
     gestures = torch.nn.functional.one_hot(batch[1],params['num_gestures']).to(device)
     positions = batch[2][:,:,position_indices].to(device)
     positions_expanded = expand_positions(positions)
+    rotations = batch[2][:,:,rotation_indices].to(device) 
+    rotations = jigsaws_to_quaternions(rotations)   
+
+    kinematics = torch.concat([positions_expanded, rotations],dim=-1)
+
     batch_size = frames.size(0)
 
     # set models to eval
@@ -96,7 +82,7 @@ def validate(models, dataloader_valid, params, device):
 
       # load condition data of current frame
       if params['conditioning'] == 'position':
-        conditioning_vec = positions_expanded[:,t,:]
+        conditioning_vec = kinematics[:,t,:]
       elif params['conditioning'] == 'gesture':
         conditioning_vec = gestures[:,t,:]
 
@@ -116,8 +102,8 @@ def validate(models, dataloader_valid, params, device):
         ssim_per_future_frame[t-params['past_count']] += (ssim_per_batch.mean().item())
 
     loss_tot = loss_MSE + loss_KLD
-    loss += torch.tensor([loss_tot.item(),loss_MSE.item(),loss_KLD.item()])         
-    
+    loss += torch.tensor([loss_tot.item(),loss_MSE.item(),loss_KLD.item()])                 
+
   loss /= len(dataloader_valid)
   ssim_per_future_frame /= len(dataloader_valid)
 

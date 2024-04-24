@@ -16,8 +16,9 @@ import matplotlib.pyplot as plt
 
 
 import torch.optim as optim
-from vgg import Encoder, Decoder
-from lstm import gaussian_lstm, lstm
+from models.vgg import Encoder, Decoder
+from models.vgg128 import Encoder128, Decoder128
+from models.lstm import gaussian_lstm, lstm
 
 from torch.utils.data import DataLoader
 import os
@@ -48,7 +49,7 @@ class DistanceLoss(nn.Module):
         return get_distance(input, target).mean()
 
 # Set device
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+device = 'cpu' # torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(device)
 
 df = pd.read_csv(os.path.join(main_config.get_project_dir(),'jigsaws_all_data_detailed.csv'))
@@ -56,6 +57,7 @@ df_train = df[(df['Subject']!='C')].reset_index(drop=True)
 df_valid = df[(df['Subject']=='C')].reset_index(drop=True)
 
 params = {
+   'frame_size':128,
    'batch_size': 8,
    'num_epochs':100,
    'img_compressed_size': 256,
@@ -81,8 +83,11 @@ params['train_repetitions'] = df_train['Repetition'].unique()
 params['valid_subjects'] = df_valid['Subject'].unique()
 params['valid_repetitions'] = df_valid['Repetition'].unique()
 
+if params['frame_size'] == 128:
+   main_config.extracted_frames_dir = '/home/chen/MScProject/data/jigsaws_extracted_frames_128/'
+
 start_epoch = 0
-use_wandb = True
+use_wandb = False
 if use_wandb:
   wandb.init(
      project = 'Robotic Surgery MSc',
@@ -117,8 +122,13 @@ dataset_valid = ConcatDataset(JigsawsImageDataset(df_valid,main_config,params['p
 dataloader_valid = DataLoader(dataset_valid, batch_size=params['batch_size'], shuffle=True)
 
 # Initialize model, loss function, and optimizer
-frame_encoder = Encoder(params['img_compressed_size'],3).to(device)
-frame_decoder = Decoder(params['img_compressed_size'],3).to(device)
+if params['frame_size'] == 128:
+  frame_encoder = Encoder128(params['img_compressed_size'],3).to(device)
+  frame_decoder = Decoder128(params['img_compressed_size'],3).to(device)
+else:   
+  frame_encoder = Encoder(params['img_compressed_size'],3).to(device)
+  frame_decoder = Decoder(params['img_compressed_size'],3).to(device)
+
 prior_lstm = gaussian_lstm(params['img_compressed_size'],params['prior_size'],256,1,params['batch_size'],device).to(device)
 generation_lstm = lstm(params['img_compressed_size'] + params['prior_size'] + params['added_vec_size'],params['img_compressed_size'],256,2,params['batch_size'],device).to(device)
 

@@ -25,13 +25,13 @@ def extract_frames(video_file, output_folder):
         min_dim = min(h, w)
         center_x = w // 2
         center_y = (h // 2) + 150
-        half_size = min_dim // 3 - 25
+        half_size = min_dim // 2
         crop_img = frame[center_y - half_size:center_y + half_size, center_x - half_size:center_x + half_size]
         
         blurred_img = cv2.GaussianBlur(crop_img, (11, 11), 0)
 
         # Resize the frame to 64x64 pixels
-        resized_frame = cv2.resize(blurred_img, (64, 64),interpolation=cv2.INTER_AREA)
+        resized_frame = cv2.resize(blurred_img, (128, 128),interpolation=cv2.INTER_AREA)
         
         # Save the frame as a PNG image
         frame_filename = os.path.join(output_folder, f"frame_{frame_num}.png")
@@ -56,7 +56,7 @@ def process_mp4_files(folder, output_folder):
 def main():
     # Input folder containing MP4 files
     input_folder = "/home/chen/MScProject/data/ROSMA"
-    output_folder = "/home/chen/MScProject/data/ROSMA_frames"
+    output_folder = "/home/chen/MScProject/data/ROSMA_frames_128"
 
     # Process MP4 files in the input folder
     process_mp4_files(input_folder, output_folder)

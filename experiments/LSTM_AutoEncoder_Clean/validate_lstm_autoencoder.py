@@ -103,6 +103,7 @@ def validate(models, dataloader_valid, params, device):
 
     loss_tot = loss_MSE + loss_KLD
     loss += torch.tensor([loss_tot.item(),loss_MSE.item(),loss_KLD.item()])                 
+    
 
   loss /= len(dataloader_valid)
   ssim_per_future_frame /= len(dataloader_valid)

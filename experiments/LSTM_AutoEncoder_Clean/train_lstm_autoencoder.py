@@ -4,6 +4,7 @@ from tqdm import tqdm
 from losses import kl_criterion_normal
 from utils import get_distance, expand_positions
 from Jigsaws.JigsawsUtils import jigsaws_to_quaternions
+import time
 
 position_indices = main_config.kinematic_slave_position_indexes
 rotation_indices = main_config.kinematic_slave_rotation_indexes
@@ -48,8 +49,8 @@ def train(models, dataloader_train, optimizer, params, device):
     # clear optimizer
     optimizer.zero_grad()
 
-    # encode all frames (past and future)
-    seq = [frame_encoder(frames[:,i,:,:,:]) for i in range(params['seq_len'])]
+    # encode all frames (past and future)    
+    seq = [frame_encoder(frames[:,i,:,:,:]) for i in range(params['seq_len'])]    
 
     # storage for genrated frames
     generated_seq = []
@@ -97,14 +98,14 @@ def train(models, dataloader_train, optimizer, params, device):
       # for all predicted future frames compute SSIM with real future frames
       if t>=params['past_count']:
         ssim_per_batch = ssim(decoded_frames, frames[:,t,:,:,:],data_range=1, size_average=False)
-        ssim_per_future_frame[t-params['past_count']] += (ssim_per_batch.mean().item())
+        ssim_per_future_frame[t-params['past_count']] += (ssim_per_batch.mean().item())          
 
     loss_tot = loss_MSE + params['beta']*loss_KLD
 
     loss_tot.backward()
     optimizer.step()
 
-    loss += torch.tensor([loss_tot.item(),loss_MSE.item(),loss_KLD.item()])      
+    loss += torch.tensor([loss_tot.item(),loss_MSE.item(),loss_KLD.item()])     
 
   loss /= len(dataloader_train)
   ssim_per_future_frame /= len(dataloader_train)

@@ -28,34 +28,34 @@ class Encoder128(nn.Module):
 
         # 128 x 128
         self.c1 = nn.Sequential(
-                vgg_layer(nc, 64, activation),
-                vgg_layer(64, 64, activation),
+                vgg_layer(nc, 32, activation),
+                vgg_layer(32, 32, activation),
                 )
         # 64 x 64
         self.c2 = nn.Sequential(
-                vgg_layer(64, 128, activation),
-                vgg_layer(128, 128, activation),
+                vgg_layer(32, 64, activation),
+                vgg_layer(64, 64, activation),
                 )
         # 32 x 32
         self.c3 = nn.Sequential(
-                vgg_layer(128, 256, activation),
-                vgg_layer(256, 256, activation),
+                vgg_layer(64, 128, activation),
+                vgg_layer(128, 128, activation),
                 )
         # 16 x 16
         self.c4 = nn.Sequential(
+                vgg_layer(128, 256, activation),
+                vgg_layer(256, 256, activation),
+                vgg_layer(256, 256, activation),
+                )
+        # 8 x 8
+        self.c5 = nn.Sequential(
                 vgg_layer(256, 512, activation),
                 vgg_layer(512, 512, activation),
                 vgg_layer(512, 512, activation),
                 )
-        # 8 x 8
-        self.c5 = nn.Sequential(
-                vgg_layer(512, 1024, activation),
-                vgg_layer(1024, 1024, activation),
-                vgg_layer(1024, 1024, activation),
-                )
         # 4 x 4
         self.c6 = nn.Sequential(
-                nn.Conv2d(1024, dim, 4, 1, 0),
+                nn.Conv2d(512, dim, 4, 1, 0),
                 nn.BatchNorm2d(dim),
                 nn.Tanh()
                 )
@@ -102,36 +102,36 @@ class Decoder128(nn.Module):
         self.nc = nc
         # 1 x 1 -> 4 x 4
         self.upc1 = nn.Sequential(
-                nn.ConvTranspose2d(dim, 1024, 4, 1, 0),
-                nn.BatchNorm2d(1024),
+                nn.ConvTranspose2d(dim, 512, 4, 1, 0),
+                nn.BatchNorm2d(512),
                 nn.LeakyReLU(0.2, inplace=True)
                 )
         # 8 x 8
         self.upc2 = nn.Sequential(
-                vgg_layer(1024*2, 1024, activation),
-                vgg_layer(1024, 1024, activation),
-                vgg_layer(1024, 512, activation)
-                )
-        # 16 x 16
-        self.upc3 = nn.Sequential(
                 vgg_layer(512*2, 512, activation),
                 vgg_layer(512, 512, activation),
                 vgg_layer(512, 256, activation)
                 )
+        # 16 x 16
+        self.upc3 = nn.Sequential(
+                vgg_layer(256*2, 256, activation),
+                vgg_layer(256, 256, activation),
+                vgg_layer(256, 128, activation)
+                )
         # 32 x 32
         self.upc4 = nn.Sequential(
-                vgg_layer(256*2, 256, activation),
-                vgg_layer(256, 128, activation)
+                vgg_layer(128*2, 128, activation),
+                vgg_layer(128, 64, activation)
                 )
         # 64 x 64
         self.upc5 = nn.Sequential(
-                vgg_layer(128*2, 128, activation),
-                vgg_layer(128, 64, activation)
+                vgg_layer(64*2, 64, activation),
+                vgg_layer(64, 32, activation)
                 )        
         # 128 x 128
         self.upc6 = nn.Sequential(
-                vgg_layer(64*2, 64, activation),
-                nn.ConvTranspose2d(64, nc, 3, 1, 1),
+                vgg_layer(32*2, 32, activation),
+                nn.ConvTranspose2d(32, nc, 3, 1, 1),
                 nn.Sigmoid()
                 )
         self.up = nn.UpsamplingNearest2d(scale_factor=2)

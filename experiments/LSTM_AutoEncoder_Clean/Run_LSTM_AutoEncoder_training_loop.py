@@ -3,6 +3,8 @@ sys.path.append('/home/chen/MScProject/Code/')
 sys.path.append('/home/chen/MScProject/Code/Jigsaws/')
 sys.path.append('/home/chen/MScProject/Code/models/')
 
+import os
+
 import wandb
 wandb.login(key = '33514858884adc0292c3f8be3706845a1db35d3a')
 
@@ -19,7 +21,6 @@ import torch.optim as optim
 from models.vgg import Encoder, Decoder
 from models.vgg128 import Encoder128, Decoder128
 from models.lstm import gaussian_lstm, lstm
-
 from torch.utils.data import DataLoader
 import os
 import torchvision.transforms as transforms
@@ -27,16 +28,12 @@ import pandas as pd
 from utils import get_distance
 import io
 from PIL import Image
-
 from datetime import datetime
-
-
 
 position_indices = main_config.kinematic_slave_position_indexes
 
 import torch
 import torch.nn as nn
-
 from train_lstm_autoencoder import train
 from validate_lstm_autoencoder import validate
 
@@ -48,8 +45,7 @@ class DistanceLoss(nn.Module):
     def forward(self, input, target):
         return get_distance(input, target).mean()
 
-# Set device
-device = 'cpu' # torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 print(device)
 
 df = pd.read_csv(os.path.join(main_config.get_project_dir(),'jigsaws_all_data_detailed.csv'))
@@ -87,7 +83,7 @@ if params['frame_size'] == 128:
    main_config.extracted_frames_dir = '/home/chen/MScProject/data/jigsaws_extracted_frames_128/'
 
 start_epoch = 0
-use_wandb = False
+use_wandb = True
 if use_wandb:
   wandb.init(
      project = 'Robotic Surgery MSc',
@@ -148,7 +144,9 @@ for epoch in range(start_epoch, params['num_epochs']):
 
   # run train and validation loops
   train_loss, train_ssim_per_future_frame = train(models, dataloader_train, optimizer, params, device)
-  valid_loss, valid_ssim_per_future_frame, batch_mover, batch_least_mover, generated_seq, frames, batch = validate(models, dataloader_valid, params, device)
+
+  with torch.no_grad():
+    valid_loss, valid_ssim_per_future_frame, batch_mover, batch_least_mover, generated_seq, frames, batch = validate(models, dataloader_valid, params, device)
     
   torch.save(frame_encoder.state_dict(),os.path.join(models_dir,'frame_encoder.pth'))
   torch.save(frame_decoder.state_dict(),os.path.join(models_dir,'frame_decoder.pth'))

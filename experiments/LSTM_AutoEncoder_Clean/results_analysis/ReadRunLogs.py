@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 api = wandb.Api()
 runs = api.runs("chenka/Robotic Surgery MSc")
 
-runid = "ij14m0l3"
+runid = "398qrj4w"
 
 last_epoch_ssim_train = None
 last_epoch_ssim_valid = None

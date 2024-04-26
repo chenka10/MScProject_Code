@@ -1,0 +1,22 @@
+import matplotlib.pyplot as plt
+import os
+from utils import torch_to_numpy
+
+def visualize_frame_diff(images_dir, title, index_to_show, orig_frames, generated_seq, display_past_count, actual_past_count, display_future_count, epoch, orig_gestures=None):
+  fig = plt.figure(figsize=(10,4))    
+  for i in range(display_future_count):
+    plt.subplot(2,display_future_count+display_past_count,display_past_count+i+1)
+    plt.imshow(torch_to_numpy(generated_seq[actual_past_count-1+i][index_to_show,:,:,:].detach()))
+    plt.xticks([])
+    plt.yticks([])
+  for i in range(display_future_count+display_past_count):
+    plt.subplot(2,display_future_count+display_past_count,i+1+display_future_count+display_past_count)
+    plt.imshow(torch_to_numpy(orig_frames[index_to_show,actual_past_count-display_past_count+i,:,:,:].detach()))
+    if orig_gestures is not None:
+      plt.title(orig_gestures[index_to_show,actual_past_count-display_past_count+i].item())
+    plt.xticks([])
+    plt.yticks([])
+
+  plt.tight_layout()
+  fig.savefig(os.path.join(images_dir,'epoch_{}_{}}.png').format(epoch,title))
+  plt.close()

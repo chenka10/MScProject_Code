@@ -62,8 +62,8 @@ class RosmaDatasetBase(Dataset):
       kinematic_row_orig = int((frame_index_resolution) * (curr_kinematic_sample_rate/self.sample_rate)) + self.df['sync_start_row'][video_index] - 1
 
       task_id = self.df['TaskID'][video_index]
-      subject = self.df['SubjectID'][video_index]
-      repetition = self.df['RepetitionNumber'][video_index]
+      subject = self.df['Subject'][video_index]
+      repetition = self.df['Repetition'][video_index]
 
       return frame_index_orig, kinematic_row_orig, task_id, subject, repetition
 

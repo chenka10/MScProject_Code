@@ -25,9 +25,10 @@ class RosmaConfig:
         self.extracted_frames_dir = '/home/chen/MScProject/data/ROSMA_frames_128'
         self.kinematics_files_dir = '/home/chen/MScProject/data/ROSMA'
         self.kinematics_df_storage = RosmaStorage()
+        self.project_baseDir = '/home/chen/MScProject/'
 
-        self.kinematic_slave_position_indexes = [82,83,84,117,118,119]
-        self.kinematic_slave_orientation_indexes = [84,85,86,87,120,121,122,123]
+        self.kinematic_slave_position_indexes = [80,81,82,116,117,118]
+        self.kinematic_slave_orientation_indexes = [83,84,85,86,119,120,121,122]
 
     def get_task_id(self, task_name):
         return self.task_names.index(task_name)  

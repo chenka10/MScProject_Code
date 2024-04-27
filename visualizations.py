@@ -18,5 +18,5 @@ def visualize_frame_diff(images_dir, title, index_to_show, orig_frames, generate
     plt.yticks([])
 
   plt.tight_layout()
-  fig.savefig(os.path.join(images_dir,'epoch_{}_{}}.png').format(epoch,title))
+  fig.savefig(os.path.join(images_dir,'epoch_{}_{}.png').format(epoch,title))
   plt.close()

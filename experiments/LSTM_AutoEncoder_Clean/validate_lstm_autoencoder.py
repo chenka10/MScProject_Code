@@ -14,6 +14,7 @@ from tqdm import tqdm
 from losses import kl_criterion_normal
 from utils import get_distance, expand_positions
 
+from DataSetup import unpack_batch
 position_indices = main_config.kinematic_slave_position_indexes
 rotation_indices = main_config.kinematic_slave_rotation_indexes
 
@@ -22,26 +23,27 @@ import torch.nn as nn
 
 mse = nn.MSELoss(reduce=False)
 
-def validate(models, dataloader_valid, params, device):
+import lpips
+loss_fn_vgg = lpips.LPIPS(net='vgg')
+
+def validate(models, dataloader_valid, params, config, device):
+  worst_batch_mse = 0.0
+  best_batch_mse = 9999999.0
+
+  # touples that will contain batch, generated_seq, and batch_index of the worst and best batches (based on mse of specific entry in the batch)
+  worst_batch_seq_ind = None
+  best_batch_seq_ind = None
+
+  loss_fn_vgg.to(device)
 
   frame_encoder, frame_decoder, prior_lstm, generation_lstm = models
 
   # storages for training metrics
-  loss = torch.tensor([0.0,0.0,0.0])
+  loss = torch.tensor([0.0,0.0,0.0,0.0])
   ssim_per_future_frame = torch.zeros((params['future_count']))
   for batch in tqdm(dataloader_valid):        
 
-    # load batch data
-    frames = batch[0].to(device)
-    gestures = torch.nn.functional.one_hot(batch[1],params['num_gestures']).to(device)
-    positions = batch[2][:,:,position_indices].to(device)
-    positions_expanded = expand_positions(positions)
-    rotations = batch[2][:,:,rotation_indices].to(device) 
-    rotations = jigsaws_to_quaternions(rotations)   
-
-    kinematics = torch.concat([positions_expanded, rotations],dim=-1)
-
-    batch_size = frames.size(0)
+    frames, gestures, gestures_onehot, positions, rotations, kinematics, batch_size = unpack_batch(params, config, batch, device)      
 
     # set models to eval
     for model in models:
@@ -62,6 +64,8 @@ def validate(models, dataloader_valid, params, device):
 
     # storage for computed losses
     loss_MSE = torch.tensor(0.0).to(device)
+    loss_MSE_per_batch = torch.zeros(batch_size)
+    loss_PER = torch.tensor(0.0).to(device)
     loss_KLD = torch.tensor(0.0).to(device)          
 
     # get avg. position diffrences for every sequence in the batch
@@ -84,16 +88,18 @@ def validate(models, dataloader_valid, params, device):
       if params['conditioning'] == 'position':
         conditioning_vec = kinematics[:,t,:]
       elif params['conditioning'] == 'gesture':
-        conditioning_vec = gestures[:,t,:]
+        conditioning_vec = gestures_onehot[:,t,:]
 
       # predict next frame latent, decode next frame, store next frame
-      frames_to_decode = generation_lstm(torch.cat([frames_t_minus_one,z,conditioning_vec],dim=-1))
+      frames_to_decode = generation_lstm(torch.cat([frames_t_minus_one,z,conditioning_vec],dim=-1).float())
       decoded_frames = frame_decoder([frames_to_decode,skips])
-      generated_seq.append(decoded_frames)
+      generated_seq.append(decoded_frames.detach().cpu())
       
       # compute losses for generated frame
       mse_per_batch = mse(decoded_frames, frames[:,t,:,:,:]).sum(-1).sum(-1).sum(-1)
+      loss_MSE_per_batch += mse_per_batch.cpu()
       loss_MSE += (distance_weight*mse_per_batch).mean()
+      loss_PER += (distance_weight*loss_fn_vgg((decoded_frames*2)-1, (frames[:,t,:,:,:]*2)-1).sum(-1).sum(-1).sum(-1)).mean()
       loss_KLD += params['beta']*kl_criterion_normal(mu,logvar)
 
       # for all predicted future frames compute SSIM with real future frames
@@ -101,13 +107,27 @@ def validate(models, dataloader_valid, params, device):
         ssim_per_batch = ssim(decoded_frames, frames[:,t,:,:,:],data_range=1, size_average=False)
         ssim_per_future_frame[t-params['past_count']] += (ssim_per_batch.mean().item())
 
+    # save worst and best batch in terms of mse for qualitative display later
+    worst_mse_batch_index = loss_MSE_per_batch.argmax().item()
+    best_mse_batch_index = loss_MSE_per_batch.argmin().item()
+
+    if loss_MSE_per_batch[worst_mse_batch_index]>worst_batch_mse: 
+      worst_batch_mse = loss_MSE_per_batch[worst_mse_batch_index]
+      worst_batch_seq_ind = ([frames.detach().cpu(), gestures.detach().cpu()],generated_seq,worst_mse_batch_index)
+
+    if loss_MSE_per_batch[best_mse_batch_index]<best_batch_mse:
+      best_batch_mse = loss_MSE_per_batch[best_mse_batch_index]
+      best_batch_seq_ind = ([frames.detach().cpu(), gestures.detach().cpu()],generated_seq,best_mse_batch_index)
+
     loss_tot = loss_MSE + loss_KLD
-    loss += torch.tensor([loss_tot.item(),loss_MSE.item(),loss_KLD.item()])                 
-    
+    loss += torch.tensor([loss_tot.item(),loss_MSE.item(),loss_PER.item(),loss_KLD.item()])  
 
   loss /= len(dataloader_valid)
   ssim_per_future_frame /= len(dataloader_valid)
 
-  return loss, ssim_per_future_frame, batch_mover, batch_least_mover, generated_seq, frames, batch
+  mover_batch_seq_ind = ([frames.detach().cpu(), gestures.detach().cpu()], generated_seq, batch_mover)
+  non_mover_batch_seq_ind = ([frames.detach().cpu(), gestures.detach().cpu()], generated_seq, batch_least_mover)
+
+  return loss, ssim_per_future_frame, mover_batch_seq_ind, non_mover_batch_seq_ind, best_batch_seq_ind, worst_batch_seq_ind
 
 

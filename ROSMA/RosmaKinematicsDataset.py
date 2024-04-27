@@ -17,8 +17,9 @@ class RosmaKinematicsDataset(RosmaDatasetBase):
 
     kinematics = []
 
+    kinematics_sample_rate = 50 # [Hz]
     for i in range(self.frames_to_retrieve):
-      kinematics.append(get_kinematics(self.config, kinematic_row_orig, task_id, subject, repetition).tolist()[1:])
+      kinematics.append(get_kinematics(self.config, int(kinematic_row_orig + i*(kinematics_sample_rate/self.sample_rate)), task_id, subject, repetition).tolist()[1:])
     
     return  torch.tensor(kinematics)
     

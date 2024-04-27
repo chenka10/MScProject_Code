@@ -64,8 +64,8 @@ for file_name in tqdm(os.listdir(folder_path)):
         data.append({
             "TaskName": task_name,
             "TaskID": config.get_task_id(task_name),
-            "SubjectID": subject_id,
-            "RepetitionNumber": repetition_number,
+            "Subject": subject_id,
+            "Repetition": repetition_number,
             "FrameCount":video_frame_count,
             "VideoSampleRate[Hz]":video_fps,            
             "Kinematics Count": kinematic_rows_num,

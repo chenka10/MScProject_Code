@@ -33,8 +33,9 @@ class RosmaImageDataset(RosmaDatasetBase):
 
     frames = torch.tensor([])
 
+    rosma_orig_video_sample_rate = 15 # [Hz]
     for i in range(self.frames_to_retrieve):
-      frame = get_extracted_frame(self.config, frame_index_orig, task_id, subject, repetition)
+      frame = get_extracted_frame(self.config, int(frame_index_orig + i*(rosma_orig_video_sample_rate/self.sample_rate)), task_id, subject, repetition)
       frame = self.transforms(frame)
       min = frame.min()
       max = frame.max()

@@ -4,38 +4,25 @@ sys.path.append('/home/chen/MScProject/Code/Jigsaws/')
 sys.path.append('/home/chen/MScProject/Code/models/')
 
 import os
+from JigsawsConfig import main_config as jigsaws_config
+from ROSMA.RosmaConfig import config as rosma_config
 
-import wandb
-wandb.login(key = '33514858884adc0292c3f8be3706845a1db35d3a')
-
-from JigsawsKinematicsDataset import JigsawsKinematicsDataset
-from JigsawsImageDataset import JigsawsImageDataset
-from JigsawsGestureDataset import JigsawsGestureDataset
-from JigsawsDatasetBase import ConcatDataset
-from JigsawsConfig import main_config
-from utils import torch_to_numpy
-import matplotlib.pyplot as plt
+from visualizations import visualize_frame_diff
 
 
 import torch.optim as optim
 from models.vgg import Encoder, Decoder
 from models.vgg128 import Encoder128, Decoder128
 from models.lstm import gaussian_lstm, lstm
-from torch.utils.data import DataLoader
 import os
-import torchvision.transforms as transforms
-import pandas as pd
 from utils import get_distance
-import io
-from PIL import Image
 from datetime import datetime
-
-position_indices = main_config.kinematic_slave_position_indexes
-
 import torch
 import torch.nn as nn
 from train_lstm_autoencoder import train
 from validate_lstm_autoencoder import validate
+
+from DataSetup import get_dataloaders
 
 
 class DistanceLoss(nn.Module):
@@ -45,13 +32,11 @@ class DistanceLoss(nn.Module):
     def forward(self, input, target):
         return get_distance(input, target).mean()
 
-device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+# 1. Set GPU to use
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(device)
 
-df = pd.read_csv(os.path.join(main_config.get_project_dir(),'jigsaws_all_data_detailed.csv'))
-df_train = df[(df['Subject']!='C')].reset_index(drop=True)
-df_valid = df[(df['Subject']=='C')].reset_index(drop=True)
-
+# 2. Set params
 params = {
    'frame_size':128,
    'batch_size': 8,
@@ -63,8 +48,10 @@ params = {
    'future_count': 10,
    'num_gestures': 16,   
    'lr': 0.0005,
-   'beta': 0.001,    
-   'conditioning':'position' #'gesture'
+   'beta': 0.001,
+   'gamma': 1000, 
+   'conditioning':'position', #'gesture'   
+   'dataset':'ROSMA'
 }
 params['seq_len'] = params['past_count'] + params['future_count']
 if params['conditioning'] == 'position':
@@ -74,17 +61,18 @@ elif params['conditioning'] == 'gesture':
 else:
    raise ValueError()
 
-params['train_subjects'] = df_train['Subject'].unique()
-params['train_repetitions'] = df_train['Repetition'].unique()
-params['valid_subjects'] = df_valid['Subject'].unique()
-params['valid_repetitions'] = df_valid['Repetition'].unique()
+if params['dataset']=='ROSMA' and params['conditioning']!='position':
+   raise ValueError('tried training on ROSMA dataset with conditioning that is not position.')
 
-if params['frame_size'] == 128:
-   main_config.extracted_frames_dir = '/home/chen/MScProject/data/jigsaws_extracted_frames_128/'
+if params['dataset'] == 'JIGSAWS': config = jigsaws_config
+else: config = rosma_config
 
-start_epoch = 0
+# 3. Set if wandb should be used
 use_wandb = True
-if use_wandb:
+start_epoch = 0
+if use_wandb is True:
+  import wandb
+  wandb.login(key = '33514858884adc0292c3f8be3706845a1db35d3a')
   wandb.init(
      project = 'Robotic Surgery MSc',
      config = params,
@@ -94,6 +82,9 @@ if use_wandb:
 else:
   runid = 3
 
+# 4. Setup data
+dataloader_train, dataloader_valid = get_dataloaders(params,config)
+
 now = datetime.now()
 timestamp = now.strftime("%Y%m%d_%H%M%S")  # Format: YYYYMMDD_HHMMSS
 
@@ -102,20 +93,6 @@ images_dir = f'/home/chen/MScProject/Code/experiments/LSTM_AutoEncoder_Clean/ima
 os.makedirs(images_dir,exist_ok=True)    
 os.makedirs(models_dir,exist_ok=True)
 
-# Define dataset and dataloaders
-transform = transforms.Compose([
-    transforms.ToTensor()
-])
-
-dataset_train = ConcatDataset(JigsawsImageDataset(df_train,main_config,params['past_count']+params['future_count'],transform,sample_rate=6),
-                        JigsawsGestureDataset(df_train,main_config,params['past_count']+params['future_count'],sample_rate=6),
-                        JigsawsKinematicsDataset(df_train,main_config,params['past_count']+params['future_count'],sample_rate=6))
-dataloader_train = DataLoader(dataset_train, batch_size=params['batch_size'], shuffle=True)
-
-dataset_valid = ConcatDataset(JigsawsImageDataset(df_valid,main_config,params['past_count']+params['future_count'],transform,sample_rate=6),
-                        JigsawsGestureDataset(df_valid,main_config,params['past_count']+params['future_count'],sample_rate=6),
-                        JigsawsKinematicsDataset(df_valid,main_config,params['past_count']+params['future_count'],sample_rate=6))
-dataloader_valid = DataLoader(dataset_valid, batch_size=params['batch_size'], shuffle=True)
 
 # Initialize model, loss function, and optimizer
 if params['frame_size'] == 128:
@@ -143,68 +120,34 @@ optimizer = optim.Adam(parameters, lr=params['lr'])
 for epoch in range(start_epoch, params['num_epochs']):
 
   # run train and validation loops
-  train_loss, train_ssim_per_future_frame = train(models, dataloader_train, optimizer, params, device)
+  train_loss, train_ssim_per_future_frame = train(models, dataloader_train, optimizer, params, config, device)
 
   with torch.no_grad():
-    valid_loss, valid_ssim_per_future_frame, batch_mover, batch_least_mover, generated_seq, frames, batch = validate(models, dataloader_valid, params, device)
-    
+    valid_loss, valid_ssim_per_future_frame, mover_batch_seq_ind, non_mover_batch_seq_ind, best_batch_seq, worst_batch_seq = validate(models, dataloader_valid, params, config, device)    
+
+  # save model weights  
   torch.save(frame_encoder.state_dict(),os.path.join(models_dir,'frame_encoder.pth'))
   torch.save(frame_decoder.state_dict(),os.path.join(models_dir,'frame_decoder.pth'))
   torch.save(generation_lstm.state_dict(),os.path.join(models_dir,'generation_lstm.pth'))
   torch.save(prior_lstm.state_dict(),os.path.join(models_dir,'prior_lstm.pth'))
 
-  fig = plt.figure(figsize=(10,4))
-  frames_from_past_count = 3
-  batch_to_show = batch_mover
-  for i in range(params['future_count']):
-    plt.subplot(2,params['future_count']+frames_from_past_count,frames_from_past_count+i+1)
-    plt.imshow(torch_to_numpy(generated_seq[params['past_count']-1+i][batch_to_show,:,:,:].detach()))
-    plt.xticks([])
-    plt.yticks([])
-  for i in range(params['future_count']+frames_from_past_count):
-    plt.subplot(2,params['future_count']+frames_from_past_count,i+1+params['future_count']+frames_from_past_count)
-    plt.imshow(torch_to_numpy(frames[batch_to_show,params['past_count']-frames_from_past_count+i,:,:,:].detach()))
-    plt.title(batch[1][batch_to_show,params['past_count']-frames_from_past_count+i].item())
-    plt.xticks([])
-    plt.yticks([])
+  # save visualizations
+  batch_seq_ind_to_save = [mover_batch_seq_ind, non_mover_batch_seq_ind, best_batch_seq, worst_batch_seq]
+  batch_seq_ind_names = ['mover','non-mover','best_mse','worst_mse']
+  display_past_count = 3
+  for i in range(len(batch_seq_ind_to_save)):
+    batch, generated_seq, index = batch_seq_ind_to_save[i]
+    frames = batch[0]
+    gestures = batch[1]
+    visualize_frame_diff(images_dir, batch_seq_ind_names[i], index, frames, generated_seq, display_past_count, params['past_count'], params['future_count'], epoch, gestures)  
 
-  plt.tight_layout()
-  fig.savefig(os.path.join(images_dir,'epoch_{}_mover.png').format(epoch))
-
-  # Save the figure to a BytesIO object
-  buffer = io.BytesIO()
-  plt.savefig(buffer, format='png')
-  buffer.seek(0)
-
-  # Open the BytesIO object as a PIL image
-  image = Image.open(buffer)
-  plt.close()
-
-  fig = plt.figure(figsize=(10,4))
-  frames_from_past_count = 3
-  batch_to_show = batch_least_mover
-  for i in range(params['future_count']):
-    plt.subplot(2,params['future_count']+frames_from_past_count,frames_from_past_count+i+1)
-    plt.imshow(torch_to_numpy(generated_seq[params['past_count']-1+i][batch_to_show,:,:,:].detach()))
-    plt.xticks([])
-    plt.yticks([])
-  for i in range(params['future_count']+frames_from_past_count):
-    plt.subplot(2,params['future_count']+frames_from_past_count,i+1+params['future_count']+frames_from_past_count)
-    plt.imshow(torch_to_numpy(frames[batch_to_show,params['past_count']-frames_from_past_count+i,:,:,:].detach()))
-    plt.title(batch[1][batch_to_show,params['past_count']-frames_from_past_count+i].item())
-    plt.xticks([])
-    plt.yticks([])
-
-  plt.tight_layout()
-  fig.savefig(os.path.join(images_dir,'epoch_{}_nonMover.png').format(epoch))
-  plt.close() 
-
+  # print current results
   print('Epoch {}: train loss {}'.format(epoch,train_loss.tolist()))
   print('Epoch {}: valid loss {}'.format(epoch,valid_loss.tolist()))    
-
   print('Epoch {}: train ssim {}'.format(epoch,[round(val,4) for val in train_ssim_per_future_frame.round(decimals=4).tolist()]))
   print('Epoch {}: valid ssim {}'.format(epoch,[round(val,4) for val in valid_ssim_per_future_frame.round(decimals=4).tolist()]))    
 
+  # log to wandb
   if use_wandb:
     data_to_log = {}
     for i in range(params['future_count']):
@@ -213,7 +156,5 @@ for epoch in range(start_epoch, params['num_epochs']):
         
     data_to_log['train_MSE'] = train_loss[1].item()
     data_to_log['valid_MSE'] = valid_loss[1].item()
-    data_to_log['image'] = wandb.Image(image, caption=f"epoch {epoch}")    
+    # data_to_log['image'] = wandb.Image(image, caption=f"epoch {epoch}")    
     wandb.log(data_to_log)       
-
-

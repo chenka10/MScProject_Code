@@ -5,6 +5,7 @@ from losses import kl_criterion_normal
 from utils import get_distance, expand_positions
 from Jigsaws.JigsawsUtils import jigsaws_to_quaternions
 import time
+from DataSetup import unpack_batch
 
 position_indices = main_config.kinematic_slave_position_indexes
 rotation_indices = main_config.kinematic_slave_rotation_indexes
@@ -12,9 +13,14 @@ rotation_indices = main_config.kinematic_slave_rotation_indexes
 import torch
 import torch.nn as nn
 
+import lpips
+loss_fn_vgg = lpips.LPIPS(net='vgg')
+
 mse = nn.MSELoss(reduce=False)
 
-def train(models, dataloader_train, optimizer, params, device):
+def train(models, dataloader_train, optimizer, params, config, device):
+
+  loss_fn_vgg.to(device)
 
   frame_encoder, frame_decoder, prior_lstm, generation_lstm = models
 
@@ -23,22 +29,12 @@ def train(models, dataloader_train, optimizer, params, device):
     model.train()
 
   # storages for training metrics
-  loss = torch.tensor([0.0,0.0,0.0]) # [MSE + beta*KLD, MSE, KLD]
+  loss = torch.tensor([0.0,0.0,0.0,0.0]) # [MSE + beta*KLD, MSE, KLD]
   ssim_per_future_frame = torch.zeros((params['future_count']))
 
   for batch in tqdm(dataloader_train):
 
-    # load batch data
-    frames = batch[0].to(device)
-    gestures = torch.nn.functional.one_hot(batch[1],params['num_gestures']).to(device)
-    positions = batch[2][:,:,position_indices].to(device)    
-    positions_expanded = expand_positions(positions)
-    rotations = batch[2][:,:,rotation_indices].to(device) 
-    rotations = jigsaws_to_quaternions(rotations)   
-
-    kinematics = torch.concat([positions_expanded,rotations],dim=-1)
-
-    batch_size = frames.size(0)    
+    frames, gestures, gestures_onehot, positions, rotations, kinematics, batch_size = unpack_batch(params, config, batch, device) 
 
     # prepare lstms for batch (set internal batch-size and set default hidden state)
     prior_lstm.batch_size = batch_size
@@ -57,6 +53,7 @@ def train(models, dataloader_train, optimizer, params, device):
 
     # storage for computed losses
     loss_MSE = torch.tensor(0.0).to(device)
+    loss_PER = torch.tensor(0.0).to(device)
     loss_KLD = torch.tensor(0.0).to(device)         
 
     # get avg. position diffrences for every sequence in the batch
@@ -78,10 +75,10 @@ def train(models, dataloader_train, optimizer, params, device):
       if params['conditioning'] == 'position':
         conditioning_vec = kinematics[:,t,:]
       elif params['conditioning'] == 'gesture':
-        conditioning_vec = gestures[:,t,:]
+        conditioning_vec = gestures_onehot[:,t,:]
 
       # predict next frame latent, decode next frame, store next frame
-      frames_to_decode = generation_lstm(torch.cat([frames_t_minus_one,z,conditioning_vec],dim=-1))
+      frames_to_decode = generation_lstm(torch.cat([frames_t_minus_one,z,conditioning_vec],dim=-1).float())
 
       contains_nan = torch.isnan(frames_to_decode).any().item()
       if contains_nan:
@@ -93,19 +90,20 @@ def train(models, dataloader_train, optimizer, params, device):
       # compute losses for generated frame
       mse_per_batch = mse(decoded_frames, frames[:,t,:,:,:]).sum(-1).sum(-1).sum(-1)
       loss_MSE += (distance_weight*mse_per_batch).mean()
-      loss_KLD += params['beta']*kl_criterion_normal(mu,logvar) 
+      loss_PER += (distance_weight*loss_fn_vgg((decoded_frames*2)-1, (frames[:,t,:,:,:]*2)-1).sum(-1).sum(-1).sum(-1)).mean()
+      loss_KLD += kl_criterion_normal(mu,logvar) 
 
       # for all predicted future frames compute SSIM with real future frames
       if t>=params['past_count']:
         ssim_per_batch = ssim(decoded_frames, frames[:,t,:,:,:],data_range=1, size_average=False)
         ssim_per_future_frame[t-params['past_count']] += (ssim_per_batch.mean().item())          
 
-    loss_tot = loss_MSE + params['beta']*loss_KLD
+    loss_tot = loss_MSE + params['gamma']*loss_PER + params['beta']*loss_KLD
 
     loss_tot.backward()
     optimizer.step()
 
-    loss += torch.tensor([loss_tot.item(),loss_MSE.item(),loss_KLD.item()])     
+    loss += torch.tensor([loss_tot.item(),loss_MSE.item(),loss_PER.item(),loss_KLD.item()])     
 
   loss /= len(dataloader_train)
   ssim_per_future_frame /= len(dataloader_train)

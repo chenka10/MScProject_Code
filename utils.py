@@ -25,7 +25,7 @@ def torch_to_numpy(image_tensor):
         numpy.ndarray: NumPy array representing the same image.
     """
     # Ensure the input tensor is 3-dimensional with three channels
-    if len(image_tensor.shape) != 3 or image_tensor.shape[0] != 3:
+    if len(image_tensor.shape) != 3:
         raise ValueError("Input tensor must have shape (3, H, W)")
 
     # Convert PyTorch tensor to NumPy array

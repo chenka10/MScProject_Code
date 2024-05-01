@@ -194,3 +194,16 @@ class DecoderNoSkip(nn.Module):
         up4 = self.up(d4) # 32 -> 64
         output = self.upc5(up4) # 64 x 64
         return output
+    
+class VGGEncoderDecoder(nn.Module):
+        def __init__(self, dim, nc=1, batch_size = None, activation = 'l_relu'):
+                super(VGGEncoderDecoder, self).__init__()
+                self.encoder = Encoder(dim,nc,batch_size,activation)
+                self.decoder = Decoder(dim,nc,batch_size,activation)
+        
+        def forward(self,input):
+            return self.decoder(self.encoder(input))
+
+
+
+

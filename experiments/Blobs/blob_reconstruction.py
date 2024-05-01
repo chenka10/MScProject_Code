@@ -8,7 +8,7 @@ from splatCoords import splat_coord
 
 for size in [64]:
 
-    x_inputs = torch.tensor([[0.5,0.5,4,3,torch.pi/2]])    
+    x_inputs = torch.tensor([[0.5,0.5,2,3,torch.pi/2]])    
 
     d = splat_coord(x_inputs, size)
     d = d.sum(0)

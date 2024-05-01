@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from vgg import vgg_layer, Encoder
+from vgg import vgg_layer, Encoder, VGGEncoderDecoder
 from splatCoords import splat_coord
 
 def to_homogeneous(points):
@@ -47,15 +47,13 @@ class MultiSkipsDecoder(nn.Module):
                 )
         # 32 x 32
         self.upc4 = nn.Sequential(
-                vgg_layer(128*2, 128, activation),
+                vgg_layer(128*2, 128, activation),                
                 vgg_layer(128, 64, activation)
                 )
         # 64 x 64
         self.upc5 = nn.Sequential(
-                vgg_layer(64*2+self.added_feature_d, 64, activation),
-                vgg_layer(64, 32, activation),
-                vgg_layer(32, 16, activation),
-                nn.ConvTranspose2d(16, nc, 3, 1, 1),
+                vgg_layer(64*2, 64, activation),                                            
+                nn.Conv2d(64, nc, 3, 1, 1),
                 nn.Sigmoid()
                 )
         self.up = nn.UpsamplingNearest2d(scale_factor=2)
@@ -86,15 +84,7 @@ class MultiSkipsDecoder(nn.Module):
 class PositionEncoder(nn.Module):
     def __init__(self):
         super(PositionEncoder, self).__init__()
-        self.enc1 = nn.Sequential(nn.Linear(3,128),
-                               nn.LeakyReLU(),
-                               nn.Linear(128,128),
-                               nn.LeakyReLU(),
-                               nn.Linear(128,128),
-                               nn.LeakyReLU(),
-                               nn.Linear(128,5))
-        
-        self.enc2 = nn.Sequential(nn.Linear(3,128),
+        self.enc = nn.Sequential(nn.Linear(3,128),
                                nn.LeakyReLU(),
                                nn.Linear(128,128),
                                nn.LeakyReLU(),
@@ -104,68 +94,86 @@ class PositionEncoder(nn.Module):
                                
 
     def forward(self, positions):
-        res_right = self.enc1(positions[:,:3])
-        res_left = self.enc2(positions[:,3:])
+        return self.enc(positions)        
 
-        return torch.concat([res_right,res_left],dim=-1)
-
+class BlobConfig:
+    def __init__(self, start_x, start_y, start_s, a_range, side):
+        self.start_x = start_x
+        self.start_y = start_y
+        self.start_s = start_s
+        self.a_range = a_range
+        self.side = side
 
 class BlobReconstructor(nn.Module):
-    def __init__(self, hidden_dim, d=128, batch_size = None, activation = 'l_relu'):
+    def __init__(self, hidden_dim, blob_configs, batch_size = None, activation = 'l_relu'):
         super(BlobReconstructor, self).__init__()
-        self.encoder_background = Encoder(hidden_dim, 3, batch_size, activation)
-        self.encoder_blobs = Encoder(hidden_dim, 1, batch_size, activation)     
-        self.decoder = MultiSkipsDecoder(hidden_dim,d, 3, batch_size, activation)  
-        self.position_encoder = PositionEncoder() 
-        self.d = d
+        self.encoder_background = Encoder(hidden_dim, 3, batch_size, activation)        
+        self.position_encoders = nn.ModuleList()      
+        self.blob_transform = nn.ModuleList()  
+        for blob_config in blob_configs:
+            self.position_encoders.append(PositionEncoder()) 
+            self.blob_transform.append(nn.Sequential(
+                vgg_layer(4,64,activation),
+                vgg_layer(64,64,activation),
+                vgg_layer(64,4,activation),
+            ))           
+        
+        self.blob_configs = blob_configs
+        self.num_blobs = len(blob_configs)
+
+        blob_f_size = 4
+
+        self.blobs_f = nn.Parameter(torch.randn(self.num_blobs,blob_f_size))
+        self.decoder = MultiSkipsDecoder(hidden_dim,self.num_blobs*blob_f_size, 3, batch_size, activation)        
+
+        self.unet = VGGEncoderDecoder(64,3,batch_size,activation)          
 
     def forward(self, backgrounds, positions):
-        
-        blob_data = self.position_encoder(positions)
-        device = blob_data.device
-        
-        blob_data[:,:2] = torch.sigmoid(blob_data[:,:2]) + torch.tensor([0,0.25]).to(blob_data.device)
-        blob_data[:,2]+=4
-        blob_data[:,3] = 1+torch.sigmoid(blob_data[:,3])*2
-        blob_data[:,4] = torch.sigmoid(blob_data[:,4])*torch.pi                
-
-        n_blob = 5
-        blob_data[:,n_blob:(2+n_blob)] = torch.sigmoid(blob_data[:,n_blob:(2+n_blob)]) + torch.tensor([0,-0.25]).to(blob_data.device)
-        blob_data[:,(2+n_blob)]+=4
-        blob_data[:,(3+n_blob)] = 1+torch.sigmoid(blob_data[:,(3+n_blob)])*2
-        blob_data[:,(4+n_blob)] = torch.sigmoid(blob_data[:,(4+n_blob)])*torch.pi        
 
         vec_background,skips_background = self.encoder_background(backgrounds)
-
-        backgrounds_signal = torch.tensor(list(range(self.d))).to(device)%3
-        right_signal = torch.tensor(list(range(1,self.d+1))).to(device)%3
-        left_signal = torch.tensor(list(range(2,self.d+2))).to(device)%3
-
-        concat_skips = []
-        first_blobs_1 = None
-        first_blobs_2 = None
-        for skip in skips_background:
-            size = skip.shape[-1]            
-            if size>=64:                
-                opacity_right = splat_coord(blob_data[:,:5],size)
-                opacity_left = splat_coord(blob_data[:,5:],size)   
-                opacity_background = torch.ones_like(opacity_right)
-
-                if first_blobs_1 is None:
-                    first_blobs_1 = opacity_right.detach().cpu()
-                    first_blobs_2 = opacity_left.detach().cpu()   
-
-                alpha_background = opacity_background*(1-opacity_left)*(1-opacity_right)
-                alpha_left = opacity_left*(1-opacity_right)
-                alpha_right = opacity_right
-
-                feature_map = alpha_background*backgrounds_signal[None,:,None,None] + alpha_right*right_signal[None,:,None,None] + alpha_left*left_signal[None,:,None,None]
-                concat_skips.append(torch.concat([skip, feature_map],dim=1))
-            else:
-                concat_skips.append(skip)
+        blobs_data = []        
+        device = positions.device
         
-        concat = [vec_background, concat_skips]
-        output = self.decoder(concat)
+        for i,blob_config in enumerate(self.blob_configs):
+            
+            if blob_config.side == 'right':
+                curr_pos = positions[:,:3]
+            else:
+                curr_pos = positions[:,3:]
+                
+            blob_data = self.position_encoders[i](curr_pos*100)                   
+        
+            blob_data[:,:2] = torch.sigmoid(blob_data[:,:2]) + torch.tensor([blob_config.start_y,blob_config.start_x]).to(device)
+            blob_data[:,2] += blob_config.start_s
+            blob_data[:,3] = blob_config.a_range[0] +torch.sigmoid(blob_data[:,3])*(blob_config.a_range[1]-blob_config.a_range[0])
+            blob_data[:,4] = torch.sigmoid(blob_data[:,4])*torch.pi     
 
-        return output, first_blobs_1, first_blobs_2
+            blobs_data.append(blob_data)            
+        
+        blobs_images_visualization = None    
+        
+        size = 64
+            
+        blobs_opacities = []    
+        blobs_images = []            
+        for i,blob_data in enumerate(blobs_data):
+            curr_blob_data = blob_data.clone()
+            curr_blob_data[:,2]/=(2**i)
+            blobs_opacities.append(splat_coord(curr_blob_data,size))
+            blob_img = self.blob_transform[i](blobs_opacities[-1]*self.blobs_f[i,:][None,:,None,None])
+            blobs_images.append(blob_img)        
+
+        if blobs_images_visualization is None:
+            blobs_images_visualization = [bo.detach().cpu() for bo in blobs_opacities]
+        
+        output_low = self.decoder([vec_background,skips_background])
+        
+
+        for i,blob_img in enumerate(blobs_images):
+            output_low=torch.mul(output_low,(1-blobs_opacities[i]))
+            output_low=torch.add(output_low,blob_img[:,:3,:,:]*(blobs_opacities[i]))
+
+        output_high = self.unet(output_low)
+
+        return output_high, output_low, blobs_opacities
     

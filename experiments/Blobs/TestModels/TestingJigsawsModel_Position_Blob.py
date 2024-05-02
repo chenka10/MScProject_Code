@@ -74,16 +74,16 @@ for repetition in [1,2,3,4]:
    dataset_for_test_frame = ConcatDataset(JigsawsImageDataset(df_test,config,1,transform,sample_rate=jigsaws_sample_rate),                        
                            JigsawsKinematicsDataset(df_test,config,1,sample_rate=jigsaws_sample_rate))
 
-   model_path = '/home/chen/MScProject/Code/experiments/Blobs/seed_42_models/model_16.pth'
+   model_path = '/home/chen/MScProject/Code/experiments/Blobs/seed_1_42_models/model_6.pth'
    blobs = [
-      BlobConfig(0.25,0,4,[2,3],'right'),
-      BlobConfig(-0.25,0,4,[2,3],'left')  
+      BlobConfig(0.25,0,4,[2,4],'right'),
+      BlobConfig(-0.25,0,4,[2,4],'left')  
    ]
    model = BlobReconstructor(256,blobs,8).to(device)
    model.load_state_dict(torch.load(model_path))
    model.eval()
 
-   frames_dir = f'/home/chen/MScProject/Code/experiments/Blobs/ModelTesting/{subject}_{repetition}/'
+   frames_dir = f'/home/chen/MScProject/Code/experiments/Blobs/ModelTesting/1_{subject}_{repetition}/'
    os.makedirs(frames_dir, exist_ok=True)
 
 

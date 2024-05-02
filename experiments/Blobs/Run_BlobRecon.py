@@ -50,7 +50,7 @@ params = {
    'future_count': 30,
    'num_gestures': 16, 
    'lr':0.0001,
-   'gamma':100,
+   'gamma':0.01,
    'conditioning':'position', #'gesture'   
    'dataset':'JIGSAWS'
 }
@@ -80,8 +80,8 @@ mse = torch.nn.MSELoss()
 
 
 blobs = [
-    BlobConfig(0.25,0,4,[2,4],'right'),
-    BlobConfig(-0.25,0,4,[2,4],'left')
+    BlobConfig(0,0,4,[2,5],'right'),
+    BlobConfig(0,0,4,[2,5],'left')
 ]
 
 model = BlobReconstructor(256,blobs,params['batch_size']).to(device)
@@ -112,7 +112,7 @@ for epoch in (range(params['num_epochs'])):
 
         MSE_Loss = mse(output_low, frames)
         PER_Loss = loss_fn_vgg(output_high, frames).mean()
-        Loss = PER_Loss + params['gamma']*MSE_Loss
+        Loss = MSE_Loss + params['gamma']*PER_Loss
         Loss_train += Loss.item()
         Loss.backward()
         optimizer.step()    
@@ -130,7 +130,7 @@ for epoch in (range(params['num_epochs'])):
 
             MSE_Loss = mse(output_low, frames)
             PER_Loss = loss_fn_vgg(output_high, frames).mean()
-            Loss = PER_Loss + params['gamma']*MSE_Loss
+            Loss = MSE_Loss + params['gamma']*PER_Loss
             Loss_test += Loss.item()
 
     valid_loss = Loss_test/len(dataloader_test)

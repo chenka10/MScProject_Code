@@ -167,12 +167,17 @@ class BlobReconstructorNextFrame(nn.Module):
             blobs_images_visualization = [bo.detach().cpu() for bo in blobs_opacities]
         
         x_t_tilde = self.decoder(torch.randn(x_tm1.size()).to(device))
+        b_t = torch.zeros(x_tm1.size()).to(device)
+        ones = torch.ones(x_tm1.size()).to(device)
 
         for i,blob_img in enumerate(blobs_images):
             x_t_tilde=torch.mul(x_t_tilde,(1-blobs_opacities[i]))
             x_t_tilde=torch.add(x_t_tilde,blob_img[:,:3,:,:]*(blobs_opacities[i]))
 
-        output_high = self.unet(torch.concat([x_t_tilde,x_tm1],1))
+            b_t=torch.mul(b_t,(1-blobs_opacities[i]))
+            b_t=torch.add(b_t,ones*(blobs_opacities[i]))
 
-        return output_high, x_t_tilde, blobs_opacities
+        output_high = self.unet(torch.concat([b_t,x_tm1],1))
+
+        return output_high, x_t_tilde, b_t
     

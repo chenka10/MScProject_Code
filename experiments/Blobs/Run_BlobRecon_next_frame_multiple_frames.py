@@ -42,11 +42,11 @@ loss_fn_vgg = lpips.LPIPS(net='vgg').to(device)
 
 params = {
    'frame_size':64,
-   'batch_size': 64,
+   'batch_size': 16,
    'num_epochs':250,
    'img_compressed_size': 256,
    'prior_size': 32,   
-   'past_count': 20,
+   'past_count': 10,
    'future_count': 0,
    'num_gestures': 16, 
    'lr':0.0001,
@@ -94,30 +94,45 @@ os.makedirs(models_dir, exist_ok=True)
 images_dir = f'/home/chen/MScProject/Code/experiments/Blobs_next_frame/seed_{seed}_images'
 os.makedirs(images_dir, exist_ok=True)
 
-base_frame = dataset_test[0][0][0].to(device)
-
 best_valid_loss = 9999999
+
+mover_index = -1
 
 for epoch in (range(params['num_epochs'])):
     model.eval() # disable batch-norm
     Loss_train = 0.0
-    for batch in tqdm(dataloader_train):
-        frames_tm1 = batch[0][:,0].to(device) # tm1 - t minus 1
-        frames_t = batch[0][:,1].to(device)
-        positions_tm1 = batch[1][:,0][:,position_indices].to(device)
-        positions_t = batch[1][:,1][:,position_indices].to(device)
+    for batch in tqdm(dataloader_train):        
+        frames = batch[0].to(device)
+        positions = batch[1][:,:,position_indices].to(device)
 
-        batch_size = frames_t.size(0)
-
+        batch_size = frames.size(0)
         optimizer.zero_grad()
 
-        output_high, output_low, blobs = model(frames_tm1,positions_t)
+        predicted_sequence_high = torch.zeros([batch_size,seq_len-1,3,params['frame_size'],params['frame_size']]).to(device)        
+        predicted_sequence_low = torch.zeros([batch_size,seq_len-1,3,params['frame_size'],params['frame_size']]).to(device)
 
-        d = get_distance(positions_t, positions_tm1)
-        MSE_Loss = mse(output_low, frames_t).mean(-1).mean(-1).mean(-1)
-        PER_Loss = loss_fn_vgg(output_high, frames_t).mean(-1).mean(-1).mean(-1)
+        for i in range(1,seq_len):
+            
+            if i==1:
+                prev_frame = frames[:,0,:,:,:]
+            else:
+                prev_frame = output_high
+
+            target_frame = frames[:,i,:,:,:]
+            target_position = positions[:,i,:]
+
+            output_high, output_low, blobs = model(prev_frame,target_position)
+            predicted_sequence_high[:,i-1,:,:,:] = output_high
+            predicted_sequence_low[:,i-1,:,:,:] = output_low
+
+        distance_weight = get_distance(positions[:,:-1,:],positions[:,1:,:]).mean(1)
+        MSE_Loss = mse(predicted_sequence_low, frames[:,1:,:,:,:]).mean(-1).mean(-1).mean(-1)
+        PER_Loss = loss_fn_vgg(
+            predicted_sequence_high.reshape([batch_size*(seq_len-1),3,params['frame_size'],params['frame_size']]),
+            frames[:,1:,:,:,:].reshape([batch_size*(seq_len-1),3,params['frame_size'],params['frame_size']])
+            ).squeeze(-1).squeeze(-1).squeeze(-1).reshape([batch_size,seq_len-1])    
         Loss = params['gamma']*MSE_Loss + PER_Loss
-        Loss = (Loss*d).mean()
+        Loss = (Loss.mean(1)*distance_weight).mean()
         Loss_train += Loss.item()
         Loss.backward()
         optimizer.step()    
@@ -126,20 +141,38 @@ for epoch in (range(params['num_epochs'])):
     model.eval()
     with torch.no_grad():        
         for batch in tqdm(dataloader_test):
-            frames_tm1 = batch[0][:,0].to(device) # tm1 - t minus 1
-            frames_t = batch[0][:,1].to(device)
-            positions_tm1 = batch[1][:,0][:,position_indices].to(device)
-            positions_t = batch[1][:,1][:,position_indices].to(device)
+            frames = batch[0].to(device)
+            positions = batch[1][:,:,position_indices].to(device)
 
-            batch_size = frames_t.size(0)
+            batch_size = frames.size(0)
+            optimizer.zero_grad()
 
-            output_high, output_low, blobs = model(frames_tm1,positions_t)
+            predicted_sequence_high = torch.zeros([batch_size,seq_len-1,3,params['frame_size'],params['frame_size']]).to(device)        
+            predicted_sequence_low = torch.zeros([batch_size,seq_len-1,3,params['frame_size'],params['frame_size']]).to(device)
 
-            d = get_distance(positions_t, positions_tm1)
-            MSE_Loss = mse(output_low, frames_t).mean(-1).mean(-1).mean(-1)
-            PER_Loss = loss_fn_vgg(output_high, frames_t).mean(-1).mean(-1).mean(-1)
+            for i in range(1,seq_len):
+                
+                if i==1:
+                    prev_frame = frames[:,0,:,:,:]
+                else:
+                    prev_frame = output_high
+
+                target_frame = frames[:,i,:,:,:]
+                target_position = positions[:,i,:]
+
+                output_high, output_low, blobs = model(prev_frame,target_position)
+                predicted_sequence_high[:,i-1,:,:,:] = output_high
+                predicted_sequence_low[:,i-1,:,:,:] = output_low
+
+            distance_weight = get_distance(positions[:,:-1,:],positions[:,1:,:]).mean(1)
+            mover_index = distance_weight.argmax().item()
+            MSE_Loss = mse(predicted_sequence_low, frames[:,1:,:,:,:]).mean(-1).mean(-1).mean(-1)
+            PER_Loss = loss_fn_vgg(
+                predicted_sequence_high.reshape([batch_size*(seq_len-1),3,params['frame_size'],params['frame_size']]),
+                frames[:,1:,:,:,:].reshape([batch_size*(seq_len-1),3,params['frame_size'],params['frame_size']])
+                ).squeeze(-1).squeeze(-1).squeeze(-1).reshape([batch_size,seq_len-1])    
             Loss = params['gamma']*MSE_Loss + PER_Loss
-            Loss = (Loss*d).mean()
+            Loss = (Loss.mean(1)*distance_weight).mean()
             Loss_test += Loss.item()
 
     valid_loss = Loss_test/len(dataloader_test)
@@ -152,17 +185,18 @@ for epoch in (range(params['num_epochs'])):
     print(Loss_train/len(dataloader_train))
     print(Loss_test/len(dataloader_test))
     print(epoch)
-    plt.figure()
-    plt.subplot(3,2,1)
-    plt.imshow(torch_to_numpy(output_high[0].detach().cpu()))
-    plt.subplot(3,2,2)
-    plt.imshow(torch_to_numpy(frames_t[0].detach().cpu()))
-    plt.subplot(3,2,3)
-    plt.imshow(torch_to_numpy(blobs[1][0].detach().cpu()))        
-    plt.subplot(3,2,4)
-    plt.imshow(torch_to_numpy(blobs[0][0].detach().cpu()))        
-    plt.subplot(3,2,5)
-    plt.imshow(torch_to_numpy(output_low[0].detach().cpu()))               
+    plt.figure(figsize=(16,3))
+    for i in range(seq_len-1):
+        plt.subplot(3,seq_len-1,i+1)
+        plt.imshow(torch_to_numpy(predicted_sequence_high[mover_index,i,:,:,:].detach().cpu()))
+        plt.axis('off')
+        plt.subplot(3,seq_len-1,(seq_len-1)+i+1)
+        plt.imshow(torch_to_numpy(predicted_sequence_low[mover_index,i,:,:,:].detach().cpu()))    
+        plt.axis('off')
+        plt.subplot(3,seq_len-1,2*(seq_len-1)+i+1)
+        plt.imshow(torch_to_numpy(frames[mover_index,i,:,:,:].detach().cpu()))    
+        plt.axis('off')
+    plt.tight_layout()
     plt.savefig(os.path.join(images_dir,f'test_{epoch}.png'))
     plt.close()
 

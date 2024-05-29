@@ -104,9 +104,9 @@ class BlobConfig:
         self.a_range = a_range
         self.side = side
 
-class BlobReconstructor(nn.Module):
+class BlobReconstructorNextFrame(nn.Module):
     def __init__(self, hidden_dim, blob_configs, batch_size = None, activation = 'l_relu'):
-        super(BlobReconstructor, self).__init__()
+        super(BlobReconstructorNextFrame, self).__init__()
         self.encoder_background = Encoder(hidden_dim, 3, batch_size, activation)        
         self.position_encoders = nn.ModuleList()      
         self.blob_transform = nn.ModuleList()  
@@ -127,9 +127,9 @@ class BlobReconstructor(nn.Module):
         # self.decoder = MultiSkipsDecoder(hidden_dim,self.num_blobs*blob_f_size, 3, batch_size, activation)        
         self.decoder = VGGEncoderDecoder(hidden_dim,3,batch_size,activation)
 
-        self.unet = VGGEncoderDecoder(64,3,batch_size,activation)          
+        self.unet = VGGEncoderDecoder(64,6,batch_size,activation)          
 
-    def forward(self, backgrounds, positions):
+    def forward(self, x_tm1, positions):
 
         blobs_data = []        
         device = positions.device
@@ -166,13 +166,13 @@ class BlobReconstructor(nn.Module):
         if blobs_images_visualization is None:
             blobs_images_visualization = [bo.detach().cpu() for bo in blobs_opacities]
         
-        output_low = self.decoder(backgrounds)        
+        x_t_tilde = self.decoder(torch.randn(x_tm1.size()).to(device))
 
         for i,blob_img in enumerate(blobs_images):
-            output_low=torch.mul(output_low,(1-blobs_opacities[i]))
-            output_low=torch.add(output_low,blob_img[:,:3,:,:]*(blobs_opacities[i]))
+            x_t_tilde=torch.mul(x_t_tilde,(1-blobs_opacities[i]))
+            x_t_tilde=torch.add(x_t_tilde,blob_img[:,:3,:,:]*(blobs_opacities[i]))
 
-        output_high = self.unet(output_low)
+        output_high = self.unet(torch.concat([x_t_tilde,x_tm1],1))
 
-        return output_high, output_low, blobs_opacities
+        return output_high, x_t_tilde, blobs_opacities
     

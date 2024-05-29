@@ -3,7 +3,7 @@ sys.path.append('/home/chen/MScProject/Code')
 sys.path.append('/home/chen/MScProject/Code/models')
 sys.path.append('/home/chen/MScProject/Code/Jigsaws')
 
-from models.blobReconstructor import BlobReconstructor, BlobConfig
+from models.blobReconstructorNextFrame import BlobReconstructorNextFrame, BlobConfig
 import pandas as pd
 import os
 from Jigsaws.JigsawsConfig import main_config as config
@@ -12,7 +12,7 @@ from Jigsaws.JigsawsKinematicsDataset import JigsawsKinematicsDataset
 from Jigsaws.JigsawsImageDataset import JigsawsImageDataset
 from torchvision.transforms import transforms
 import torch
-from utils import torch_to_numpy
+from utils import torch_to_numpy, get_distance
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 from torch import optim
@@ -66,17 +66,17 @@ df_train = df[(df['Subject'] != 'C')].reset_index(drop=True)
 df_test = df[(df['Subject'] =='C')].reset_index(drop=True)
 
 jigsaws_sample_rate = 6
-dataset_train = ConcatDataset(JigsawsImageDataset(df_train,config,1,transform,sample_rate=jigsaws_sample_rate),                        
-                        JigsawsKinematicsDataset(df_train,config,1,sample_rate=jigsaws_sample_rate))
+dataset_train = ConcatDataset(JigsawsImageDataset(df_train,config,2,transform,sample_rate=jigsaws_sample_rate),                        
+                        JigsawsKinematicsDataset(df_train,config,2,sample_rate=jigsaws_sample_rate))
 dataloader_train = DataLoader(dataset_train,params['batch_size'],True,drop_last=True)
 
-dataset_test = ConcatDataset(JigsawsImageDataset(df_test,config,1,transform,sample_rate=jigsaws_sample_rate),                        
-                        JigsawsKinematicsDataset(df_test,config,1,sample_rate=jigsaws_sample_rate))
+dataset_test = ConcatDataset(JigsawsImageDataset(df_test,config,2,transform,sample_rate=jigsaws_sample_rate),                        
+                        JigsawsKinematicsDataset(df_test,config,2,sample_rate=jigsaws_sample_rate))
 dataloader_test = DataLoader(dataset_test,params['batch_size'],True,drop_last=True)
 
 position_indices = config.kinematic_slave_position_indexes
 
-mse = torch.nn.MSELoss()
+mse = torch.nn.MSELoss(reduce=False)
 
 
 blobs = [
@@ -84,16 +84,16 @@ blobs = [
     BlobConfig(-0.25,0,4,[2,4],'left')
 ]
 
-model = BlobReconstructor(256,blobs,params['batch_size']).to(device)
+model = BlobReconstructorNextFrame(256,blobs,params['batch_size']).to(device)
 optimizer = optim.Adam(model.parameters(), lr=params['lr'])
 
-models_dir = f'/home/chen/MScProject/Code/experiments/Blobs/seed_2_{seed}_models'    
+models_dir = f'/home/chen/MScProject/Code/experiments/Blobs_next_frame/seed_{seed}_models'    
 os.makedirs(models_dir, exist_ok=True)
 
-images_dir = f'/home/chen/MScProject/Code/experiments/Blobs/seed_2_{seed}_images'
+images_dir = f'/home/chen/MScProject/Code/experiments/Blobs_next_frame/seed_{seed}_images'
 os.makedirs(images_dir, exist_ok=True)
 
-base_frame = torch.randn(dataset_test[0][0][0].size()).to(device)
+base_frame = dataset_test[0][0][0].to(device)
 
 best_valid_loss = 9999999
 
@@ -101,18 +101,22 @@ for epoch in (range(params['num_epochs'])):
     model.eval() # disable batch-norm
     Loss_train = 0.0
     for batch in tqdm(dataloader_train):
-        frames = batch[0].squeeze(1).to(device)
-        positions = batch[1].squeeze(1)[:,position_indices].to(device)
+        frames_tm1 = batch[0][:,0].to(device) # tm1 - t minus 1
+        frames_t = batch[0][:,1].to(device)
+        positions_tm1 = batch[1][:,0][:,position_indices].to(device)
+        positions_t = batch[1][:,1][:,position_indices].to(device)
 
-        batch_size = frames.size(0)
+        batch_size = frames_t.size(0)
 
         optimizer.zero_grad()
 
-        output_high, output_low, blobs = model(base_frame.repeat(batch_size,1,1,1),positions)
+        output_high, output_low, blobs = model(frames_tm1,positions_t)
 
-        MSE_Loss = mse(output_low, frames)
-        PER_Loss = loss_fn_vgg(output_high, frames).mean()
+        d = get_distance(positions_t, positions_tm1)
+        MSE_Loss = mse(output_low, frames_t).mean(-1).mean(-1).mean(-1)
+        PER_Loss = loss_fn_vgg(output_high, frames_t).mean(-1).mean(-1).mean(-1)
         Loss = params['gamma']*MSE_Loss + PER_Loss
+        Loss = (Loss*d).mean()
         Loss_train += Loss.item()
         Loss.backward()
         optimizer.step()    
@@ -121,16 +125,20 @@ for epoch in (range(params['num_epochs'])):
     model.eval()
     with torch.no_grad():        
         for batch in tqdm(dataloader_test):
-            frames = batch[0].squeeze(1).to(device)
-            positions = batch[1].squeeze(1)[:,position_indices].to(device)
+            frames_tm1 = batch[0][:,0].to(device) # tm1 - t minus 1
+            frames_t = batch[0][:,1].to(device)
+            positions_tm1 = batch[1][:,0][:,position_indices].to(device)
+            positions_t = batch[1][:,1][:,position_indices].to(device)
 
-            batch_size = frames.size(0)
+            batch_size = frames_t.size(0)
 
-            output_high, output_low, blobs = model(base_frame.repeat(batch_size,1,1,1),positions)
+            output_high, output_low, blobs = model(frames_tm1,positions_t)
 
-            MSE_Loss = mse(output_low, frames)
-            PER_Loss = loss_fn_vgg(output_high, frames).mean()
+            d = get_distance(positions_t, positions_tm1)
+            MSE_Loss = mse(output_low, frames_t).mean(-1).mean(-1).mean(-1)
+            PER_Loss = loss_fn_vgg(output_high, frames_t).mean(-1).mean(-1).mean(-1)
             Loss = params['gamma']*MSE_Loss + PER_Loss
+            Loss = (Loss*d).mean()
             Loss_test += Loss.item()
 
     valid_loss = Loss_test/len(dataloader_test)
@@ -147,7 +155,7 @@ for epoch in (range(params['num_epochs'])):
     plt.subplot(3,2,1)
     plt.imshow(torch_to_numpy(output_high[0].detach().cpu()))
     plt.subplot(3,2,2)
-    plt.imshow(torch_to_numpy(frames[0].detach().cpu()))
+    plt.imshow(torch_to_numpy(frames_t[0].detach().cpu()))
     plt.subplot(3,2,3)
     plt.imshow(torch_to_numpy(blobs[1][0].detach().cpu()))        
     plt.subplot(3,2,4)

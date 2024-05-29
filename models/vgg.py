@@ -199,7 +199,7 @@ class VGGEncoderDecoder(nn.Module):
         def __init__(self, dim, nc=1, batch_size = None, activation = 'l_relu'):
                 super(VGGEncoderDecoder, self).__init__()
                 self.encoder = Encoder(dim,nc,batch_size,activation)
-                self.decoder = Decoder(dim,nc,batch_size,activation)
+                self.decoder = Decoder(dim,3,batch_size,activation)
         
         def forward(self,input):
             return self.decoder(self.encoder(input))

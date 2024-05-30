@@ -226,13 +226,13 @@ class MultiSkipsDecoder(nn.Module):
                 )
         # 16 x 16
         self.upc3 = nn.Sequential(
-                vgg_layer(256*2, 256, activation),
+                vgg_layer(256*2 + self.added_feature_d, 256, activation),
                 vgg_layer(256, 256, activation),
                 vgg_layer(256, 128, activation)
                 )
         # 32 x 32
         self.upc4 = nn.Sequential(
-                vgg_layer(128*2, 128, activation),                
+                vgg_layer(128*2 + self.added_feature_d, 128, activation),                
                 vgg_layer(128, 64, activation)
                 )
         # 64 x 64

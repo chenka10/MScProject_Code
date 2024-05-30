@@ -24,8 +24,8 @@ def get_dataloaders(params, config):
         jigsaws_sample_rate = 6 # this is not [Hz], this is sampling 1 ouf of 6 frames from the frames we have sampled at 30[Hz]
 
         df = pd.read_csv(os.path.join(config.get_project_dir(),'jigsaws_all_data_detailed.csv'))
-        df_train = df[(df['Subject']=='C') & df['Repetition']==1].reset_index(drop=True)
-        df_valid = df[(df['Subject']=='C') & df['Repetition']==1].reset_index(drop=True)
+        df_train = df[(df['Subject']!='C')].reset_index(drop=True)
+        df_valid = df[(df['Subject']=='C')].reset_index(drop=True)
 
         dataset_train = ConcatDataset(JigsawsImageDataset(df_train,config,params['past_count']+params['future_count'],transform,sample_rate=jigsaws_sample_rate),
                                 JigsawsGestureDataset(df_train,config,params['past_count']+params['future_count'],sample_rate=jigsaws_sample_rate),

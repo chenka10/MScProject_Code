@@ -76,19 +76,31 @@ def validate(models, position_to_blobs, dataloader_valid, params, config, device
     for t in range(1,params['seq_len']):
 
       blob_datas = position_to_blobs(positions[:,t,:])
-      feature_maps_0, grayscale_maps_0 = blobs_to_maps[0](blob_datas[0])
-      feature_maps_1, grayscale_maps_1 = blobs_to_maps[1](blob_datas[1])
-      combined_blobs_feature_maps = combine_blob_maps(torch.zeros_like(feature_maps_0),
-                                                      [feature_maps_0,feature_maps_1],
-                                                      [grayscale_maps_0,grayscale_maps_1])
+      feature_maps = []
+      grayscale_maps = []
+
+      for i in range(len(blobs_to_maps)):
+        f,g = blobs_to_maps[i](blob_datas[i%2])
+        feature_maps.append(f)
+        grayscale_maps.append(g)
+      
+      combined_blobs_feature_maps = []
+      for i in range(len(blobs_to_maps)//2):
+        combined_blobs_feature_maps.append(combine_blob_maps(torch.zeros_like(feature_maps[i*2]),
+                                                        [feature_maps[i*2],feature_maps[i*2+1]],
+                                                        [grayscale_maps[i*2],grayscale_maps[i*2+1]]))
 
       # keep loading past frames (for conditioning), once conditioning is over, load previously encoded frames
       if t <= params['past_count']:          
         frames_t_minus_one, skips = seq[t-1]
-        skips[0] = torch.concat([skips[0],combined_blobs_feature_maps],1)
+        skips[0] = torch.concat([skips[0],combined_blobs_feature_maps[0]],1)
+        skips[1] = torch.concat([skips[1],combined_blobs_feature_maps[1]],1)
+        skips[2] = torch.concat([skips[2],combined_blobs_feature_maps[2]],1)
       else:          
         frames_t_minus_one = frame_encoder(decoded_frames)[0]   
-        skips[0][:,-combined_blobs_feature_maps.size(1):,:,:] = combined_blobs_feature_maps    
+        skips[0][:,-combined_blobs_feature_maps[0].size(1):,:,:] = combined_blobs_feature_maps[0]
+        skips[1][:,-combined_blobs_feature_maps[1].size(1):,:,:] = combined_blobs_feature_maps[1]
+        skips[2][:,-combined_blobs_feature_maps[2].size(1):,:,:] = combined_blobs_feature_maps[2]  
 
       # predict next frame latent, decode next frame, store next frame
       frames_to_decode = generation_lstm(frames_t_minus_one.float())

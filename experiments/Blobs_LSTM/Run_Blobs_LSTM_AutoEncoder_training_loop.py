@@ -38,7 +38,7 @@ print(device)
 # 2. Set params
 params = {
    'frame_size':64,
-   'batch_size': 8,
+   'batch_size': 20,
    'num_epochs':100,
    'img_compressed_size': 256,
    'prior_size': 32,
@@ -101,7 +101,9 @@ blob_config = [
 position_to_blobs = PositionToBlobs(blob_config)
 position_to_blobs.load_state_dict(torch.load(os.path.join(positions_to_blobs_dir,'positions_to_blobs.pth')))
 position_to_blobs.to(device)
-blobs_to_maps = nn.ModuleList([BlobsToFeatureMaps(blob_feature_size,64),BlobsToFeatureMaps(blob_feature_size,64)]).to(device)
+blobs_to_maps = nn.ModuleList([BlobsToFeatureMaps(blob_feature_size,64),BlobsToFeatureMaps(blob_feature_size,64),
+                               BlobsToFeatureMaps(blob_feature_size,32),BlobsToFeatureMaps(blob_feature_size,32),
+                               BlobsToFeatureMaps(blob_feature_size,16),BlobsToFeatureMaps(blob_feature_size,16)]).to(device)
 
 mse = nn.MSELoss(reduce=False)
 

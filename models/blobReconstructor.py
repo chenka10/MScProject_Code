@@ -157,12 +157,23 @@ class BlobsToFeatureMaps(nn.Module):
         return blobs_feature_map, blobs_grayscale_map
 
 
+def combine_blob_maps(background, feature_maps, grayscale_maps):        
+
+    res = background.clone()
+    for i,blob_img in enumerate(feature_maps):
+        res=torch.mul(res,(1-grayscale_maps[i]))
+        # res=torch.add(res,blob_img[:,:3,:,:]*(grayscale_maps[i]))
+        res=torch.add(res,blob_img[:,:,:,:]*(grayscale_maps[i]))
+
+    return res
+
+
 class BlobReconstructor(nn.Module):
     def __init__(self, hidden_dim, blob_configs, batch_size = None, activation = 'l_relu'):
         super(BlobReconstructor, self).__init__()
         self.encoder_background = Encoder(hidden_dim, 3, batch_size, activation)        
 
-        blob_f_size = 4
+        blob_f_size = 3
 
         self.positions_to_blobs = PositionToBlobs(blob_configs)
         self.blobs_to_maps = nn.ModuleList()
@@ -195,11 +206,12 @@ class BlobReconstructor(nn.Module):
         if blobs_images_visualization is None:
             blobs_images_visualization = [bo.detach().cpu() for bo in blobs_grayscale_maps]
         
-        output_low = self.decoder(backgrounds)        
+        output_low = self.decoder(backgrounds)    
+        output_low = combine_blob_maps(output_low, blobs_feature_maps, blobs_grayscale_maps)    
 
-        for i,blob_img in enumerate(blobs_feature_maps):
-            output_low=torch.mul(output_low,(1-blobs_grayscale_maps[i]))
-            output_low=torch.add(output_low,blob_img[:,:3,:,:]*(blobs_grayscale_maps[i]))
+        # for i,blob_img in enumerate(blobs_feature_maps):
+        #     output_low=torch.mul(output_low,(1-blobs_grayscale_maps[i]))
+        #     output_low=torch.add(output_low,blob_img[:,:3,:,:]*(blobs_grayscale_maps[i]))
 
         output_high = self.unet(output_low)
 

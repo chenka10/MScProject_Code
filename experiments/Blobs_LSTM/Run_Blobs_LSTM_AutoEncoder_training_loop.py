@@ -1,4 +1,5 @@
 import sys
+sys.path.append('/home/chen/MScProject/')
 sys.path.append('/home/chen/MScProject/Code/')
 sys.path.append('/home/chen/MScProject/Code/Jigsaws/')
 sys.path.append('/home/chen/MScProject/Code/models/')
@@ -7,7 +8,7 @@ import os
 from JigsawsConfig import main_config as jigsaws_config
 
 from visualizations import visualize_frame_diff
-
+from models.blobReconstructor import BlobConfig, PositionToBlobs, BlobsToFeatureMaps
 
 import torch.optim as optim
 from models.vgg import Encoder, MultiSkipsDecoder
@@ -18,9 +19,9 @@ from utils import get_distance
 from datetime import datetime
 import torch
 import torch.nn as nn
-from Code.experiments.Blobs_LSTM.train_Blobs_LSTM_autoencoder import train
-from Code.experiments.Blobs_LSTM.validate_Blobs_LSTM_autoencoder import validate
-from Code.experiments.Blobs_LSTM.Blobs_LSTM_DataSetup import get_dataloaders
+from experiments.Blobs_LSTM.train_Blobs_LSTM_autoencoder import train
+from experiments.Blobs_LSTM.validate_Blobs_LSTM_autoencoder import validate
+from experiments.Blobs_LSTM.Blobs_LSTM_DataSetup import get_dataloaders
 
 
 class DistanceLoss(nn.Module):
@@ -80,27 +81,35 @@ dataloader_train, dataloader_valid = get_dataloaders(params,config)
 now = datetime.now()
 timestamp = now.strftime("%Y%m%d_%H%M%S")  # Format: YYYYMMDD_HHMMSS
 
-position_encoder_dir = '/home/chen/MScProject/Code/experiments/Blobs_next_frame/V1_2_seed_42_models'
+positions_to_blobs_dir = '/home/chen/MScProject/Code/experiments/Blobs/seed_3_42_models'
 models_dir = f'/home/chen/MScProject/Code/experiments/Blobs_LSTM/models_{params['conditioning']}/models_{timestamp}_{runid}/'
 images_dir = f'/home/chen/MScProject/Code/experiments/Blobs_LSTM/images_{params['conditioning']}/images_{timestamp}_{runid}/'
 os.makedirs(images_dir,exist_ok=True)    
 os.makedirs(models_dir,exist_ok=True)
 
+blob_feature_size = 16
 
 # Initialize model, loss function, and optimizer 
 frame_encoder = Encoder(params['img_compressed_size'],3).to(device)
-frame_decoder = MultiSkipsDecoder(params['img_compressed_size'],1,3).to(device)
-generation_lstm = lstm(params['img_compressed_size'] + params['prior_size'] + params['added_vec_size'],params['img_compressed_size'],256,2,params['batch_size'],device).to(device)
-blob_position_encoders = nn.ModuleList([PositionEncoder(),PositionEncoder()])
-blob_position_encoders.load_state_dict(os.path.join(position_encoder_dir,'position_encoders.pth'))
-blob_position_encoders.to(device)
+frame_decoder = MultiSkipsDecoder(params['img_compressed_size'],blob_feature_size,3).to(device)
+generation_lstm = lstm(params['img_compressed_size'],params['img_compressed_size'],256,2,params['batch_size'],device).to(device)
+
+blob_config = [
+    BlobConfig(0.25,0,4,[2,4],'right'),
+    BlobConfig(-0.25,0,4,[2,4],'left')
+]
+position_to_blobs = PositionToBlobs(blob_config)
+position_to_blobs.load_state_dict(torch.load(os.path.join(positions_to_blobs_dir,'positions_to_blobs.pth')))
+position_to_blobs.to(device)
+blobs_to_maps = nn.ModuleList([BlobsToFeatureMaps(blob_feature_size,64),BlobsToFeatureMaps(blob_feature_size,64)]).to(device)
 
 mse = nn.MSELoss(reduce=False)
 
 models = [
     frame_encoder,
     frame_decoder,    
-    generation_lstm    
+    generation_lstm,
+    blobs_to_maps   
 ]
 
 parameters = sum([list(model.parameters()) for model in models],[])
@@ -109,16 +118,16 @@ optimizer = optim.Adam(parameters, lr=params['lr'])
 for epoch in range(params['num_epochs']):
 
   # run train and validation loops
-  train_loss, train_ssim_per_future_frame = train(models, blob_position_encoders, dataloader_train, optimizer, params, config, device)
+  train_loss, train_ssim_per_future_frame = train(models, position_to_blobs, dataloader_train, optimizer, params, config, device)
 
   with torch.no_grad():
-    valid_loss, valid_ssim_per_future_frame, mover_batch_seq_ind, non_mover_batch_seq_ind, best_batch_seq, worst_batch_seq = validate(models, dataloader_valid, params, config, device)    
+    valid_loss, valid_ssim_per_future_frame, mover_batch_seq_ind, non_mover_batch_seq_ind, best_batch_seq, worst_batch_seq = validate(models, position_to_blobs, dataloader_valid, params, config, device)    
 
   # save model weights  
   torch.save(frame_encoder.state_dict(),os.path.join(models_dir,'frame_encoder.pth'))
   torch.save(frame_decoder.state_dict(),os.path.join(models_dir,'frame_decoder.pth'))
   torch.save(generation_lstm.state_dict(),os.path.join(models_dir,'generation_lstm.pth'))
-  torch.save(prior_lstm.state_dict(),os.path.join(models_dir,'prior_lstm.pth'))
+  torch.save(blobs_to_maps.state_dict(),os.path.join(models_dir,'blobs_to_maps.pth'))
 
   # save visualizations
   batch_seq_ind_to_save = [mover_batch_seq_ind, non_mover_batch_seq_ind, best_batch_seq, worst_batch_seq]
@@ -137,13 +146,13 @@ for epoch in range(params['num_epochs']):
   print('Epoch {}: valid ssim {}'.format(epoch,[round(val,4) for val in valid_ssim_per_future_frame.round(decimals=4).tolist()]))    
 
   # log to wandb
-  if use_wandb:
-    data_to_log = {}
-    for i in range(params['future_count']):
-        data_to_log['train_SSIM_timestep_{}'.format(i)] = train_ssim_per_future_frame[i].item()
-        data_to_log['valid_SSIM_timestep_{}'.format(i)] = valid_ssim_per_future_frame[i].item()
+  # if use_wandb:
+  #   data_to_log = {}
+  #   for i in range(params['future_count']):
+  #       data_to_log['train_SSIM_timestep_{}'.format(i)] = train_ssim_per_future_frame[i].item()
+  #       data_to_log['valid_SSIM_timestep_{}'.format(i)] = valid_ssim_per_future_frame[i].item()
         
-    data_to_log['train_MSE'] = train_loss[1].item()
-    data_to_log['valid_MSE'] = valid_loss[1].item()
-    # data_to_log['image'] = wandb.Image(image, caption=f"epoch {epoch}")    
-    wandb.log(data_to_log)       
+  #   data_to_log['train_MSE'] = train_loss[1].item()
+  #   data_to_log['valid_MSE'] = valid_loss[1].item()
+  #   # data_to_log['image'] = wandb.Image(image, caption=f"epoch {epoch}")    
+  #   wandb.log(data_to_log)       

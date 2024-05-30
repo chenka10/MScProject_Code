@@ -10,6 +10,7 @@ from JigsawsConfig import main_config
 from Jigsaws.JigsawsUtils import jigsaws_to_quaternions
 from pytorch_msssim import ssim
 from tqdm import tqdm
+from models.blobReconstructor import combine_blob_maps
 
 from losses import kl_criterion_normal
 from utils import get_distance, expand_positions
@@ -26,7 +27,7 @@ mse = nn.MSELoss(reduce=False)
 import lpips
 loss_fn_vgg = lpips.LPIPS(net='vgg')
 
-def validate(models, dataloader_valid, params, config, device):
+def validate(models, position_to_blobs, dataloader_valid, params, config, device):
   worst_batch_mse = 0.0
   best_batch_mse = 9999999.0
 
@@ -36,7 +37,7 @@ def validate(models, dataloader_valid, params, config, device):
 
   loss_fn_vgg.to(device)
 
-  frame_encoder, frame_decoder, prior_lstm, generation_lstm = models
+  frame_encoder, frame_decoder, generation_lstm, blobs_to_maps = models
 
   # storages for training metrics
   loss = torch.tensor([0.0,0.0,0.0,0.0])
@@ -51,8 +52,6 @@ def validate(models, dataloader_valid, params, config, device):
       model.batch_size = batch_size
 
     # prepare lstms for batch      
-    prior_lstm.batch_size = batch_size
-    prior_lstm.hidden = prior_lstm.init_hidden()
     generation_lstm.batch_size = batch_size
     generation_lstm.hidden = generation_lstm.init_hidden()
 
@@ -76,22 +75,23 @@ def validate(models, dataloader_valid, params, config, device):
 
     for t in range(1,params['seq_len']):
 
+      blob_datas = position_to_blobs(positions[:,t,:])
+      feature_maps_0, grayscale_maps_0 = blobs_to_maps[0](blob_datas[0])
+      feature_maps_1, grayscale_maps_1 = blobs_to_maps[1](blob_datas[1])
+      combined_blobs_feature_maps = combine_blob_maps(torch.zeros_like(feature_maps_0),
+                                                      [feature_maps_0,feature_maps_1],
+                                                      [grayscale_maps_0,grayscale_maps_1])
+
       # keep loading past frames (for conditioning), once conditioning is over, load previously encoded frames
       if t <= params['past_count']:          
         frames_t_minus_one, skips = seq[t-1]
+        skips[0] = torch.concat([skips[0],combined_blobs_feature_maps],1)
       else:          
-        frames_t_minus_one = frame_encoder(decoded_frames)[0]       
-      
-      z,mu,logvar = prior_lstm(frames_t_minus_one)        
-
-      # load condition data of current frame
-      if params['conditioning'] == 'position':
-        conditioning_vec = kinematics[:,t,:]
-      elif params['conditioning'] == 'gesture':
-        conditioning_vec = gestures_onehot[:,t,:]
+        frames_t_minus_one = frame_encoder(decoded_frames)[0]   
+        skips[0][:,-combined_blobs_feature_maps.size(1):,:,:] = combined_blobs_feature_maps    
 
       # predict next frame latent, decode next frame, store next frame
-      frames_to_decode = generation_lstm(torch.cat([frames_t_minus_one,z,conditioning_vec],dim=-1).float())
+      frames_to_decode = generation_lstm(frames_t_minus_one.float())
       decoded_frames = frame_decoder([frames_to_decode,skips])
       generated_seq.append(decoded_frames.detach().cpu())
       
@@ -99,8 +99,7 @@ def validate(models, dataloader_valid, params, config, device):
       mse_per_batch = mse(decoded_frames, frames[:,t,:,:,:]).sum(-1).sum(-1).sum(-1)
       loss_MSE_per_batch += mse_per_batch.cpu()
       loss_MSE += (distance_weight*mse_per_batch).mean()
-      loss_PER += (distance_weight*loss_fn_vgg((decoded_frames*2)-1, (frames[:,t,:,:,:]*2)-1).sum(-1).sum(-1).sum(-1)).mean()
-      loss_KLD += params['beta']*kl_criterion_normal(mu,logvar)
+      loss_PER += (distance_weight*loss_fn_vgg((decoded_frames*2)-1, (frames[:,t,:,:,:]*2)-1).sum(-1).sum(-1).sum(-1)).mean()      
 
       # for all predicted future frames compute SSIM with real future frames
       if t>=params['past_count']:

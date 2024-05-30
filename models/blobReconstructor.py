@@ -104,6 +104,37 @@ class BlobConfig:
         self.a_range = a_range
         self.side = side
 
+class PositionToBlobs(nn.Module):
+    def __init__(self, blob_configs):
+        self.blob_configs = blob_configs        
+        self.position_encoders = nn.ModuleList()
+
+        for blob_config in blob_configs:
+            self.position_encoders.append(PositionEncoder())
+
+    def forward(self, positions):
+
+        blobs_data = []
+
+        for i,blob_config in enumerate(self.blob_configs):
+            
+            if blob_config.side == 'right':
+                curr_pos = positions[:,:3]
+            else:
+                curr_pos = positions[:,3:]
+                
+            blob_data = self.position_encoders[i](curr_pos*100)                   
+        
+            blob_data[:,:2] = torch.sigmoid(blob_data[:,:2]) + torch.tensor([blob_config.start_y,blob_config.start_x]).to(device)
+            blob_data[:,2] += blob_config.start_s
+            blob_data[:,3] = blob_config.a_range[0] +torch.sigmoid(blob_data[:,3])*(blob_config.a_range[1]-blob_config.a_range[0])
+            blob_data[:,4] = torch.sigmoid(blob_data[:,4])*torch.pi     
+
+            blobs_data.append(blob_data) 
+            
+        return blobs_data
+
+
 class BlobReconstructor(nn.Module):
     def __init__(self, hidden_dim, blob_configs, batch_size = None, activation = 'l_relu'):
         super(BlobReconstructor, self).__init__()
@@ -157,8 +188,7 @@ class BlobReconstructor(nn.Module):
         blobs_opacities = []    
         blobs_images = []            
         for i,blob_data in enumerate(blobs_data):
-            curr_blob_data = blob_data.clone()
-            curr_blob_data[:,2]/=(2**i)
+            curr_blob_data = blob_data.clone()            
             blobs_opacities.append(splat_coord(curr_blob_data,size))
             blob_img = self.blob_transform[i](blobs_opacities[-1]*self.blobs_f[i,:][None,:,None,None])
             blobs_images.append(blob_img)        

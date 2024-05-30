@@ -35,14 +35,14 @@ torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 print('seed:', seed)
 
-device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(device)
 
 loss_fn_vgg = lpips.LPIPS(net='vgg').to(device)
 
 params = {
    'frame_size':64,
-   'batch_size': 16,
+   'batch_size': 25,
    'num_epochs':250,
    'img_compressed_size': 256,
    'prior_size': 32,   
@@ -88,10 +88,10 @@ blobs = [
 model = BlobReconstructorNextFrame(256,blobs,params['batch_size']).to(device)
 optimizer = optim.Adam(model.parameters(), lr=params['lr'])
 
-models_dir = f'/home/chen/MScProject/Code/experiments/Blobs_next_frame/seed_{seed}_models'    
+models_dir = f'/home/chen/MScProject/Code/experiments/Blobs_next_frame/V1_2_seed_{seed}_models'    
 os.makedirs(models_dir, exist_ok=True)
 
-images_dir = f'/home/chen/MScProject/Code/experiments/Blobs_next_frame/seed_{seed}_images'
+images_dir = f'/home/chen/MScProject/Code/experiments/Blobs_next_frame/V1_2_seed_{seed}_images'
 os.makedirs(images_dir, exist_ok=True)
 
 best_valid_loss = 9999999
@@ -194,7 +194,7 @@ for epoch in (range(params['num_epochs'])):
         plt.imshow(torch_to_numpy(predicted_sequence_low[mover_index,i,:,:,:].detach().cpu()))    
         plt.axis('off')
         plt.subplot(3,seq_len-1,2*(seq_len-1)+i+1)
-        plt.imshow(torch_to_numpy(frames[mover_index,i,:,:,:].detach().cpu()))    
+        plt.imshow(torch_to_numpy(frames[mover_index,i+1,:,:,:].detach().cpu()))    
         plt.axis('off')
     plt.tight_layout()
     plt.savefig(os.path.join(images_dir,f'test_{epoch}.png'))

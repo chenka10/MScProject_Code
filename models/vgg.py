@@ -203,6 +203,68 @@ class VGGEncoderDecoder(nn.Module):
         
         def forward(self,input):
             return self.decoder(self.encoder(input))
+        
+class MultiSkipsDecoder(nn.Module):
+    def __init__(self, dim, added_feature_d, nc=1, batch_size = None, activation = 'l_relu'):
+        super(MultiSkipsDecoder, self).__init__()
+        self.dim = dim
+        self.batch_size = batch_size
+        self.nc = nc   
+        self.added_feature_d = added_feature_d
+
+        # 1 x 1 -> 4 x 4
+        self.upc1 = nn.Sequential(
+                nn.ConvTranspose2d(dim, 512, 4, 1, 0),
+                nn.BatchNorm2d(512),
+                nn.LeakyReLU(0.2, inplace=True)
+                )
+        # 8 x 8
+        self.upc2 = nn.Sequential(
+                vgg_layer(512*2, 512, activation),
+                vgg_layer(512, 512, activation),
+                vgg_layer(512, 256, activation)
+                )
+        # 16 x 16
+        self.upc3 = nn.Sequential(
+                vgg_layer(256*2 + self.added_feature_d, 256, activation),
+                vgg_layer(256, 256, activation),
+                vgg_layer(256, 128, activation)
+                )
+        # 32 x 32
+        self.upc4 = nn.Sequential(
+                vgg_layer(128*2 + self.added_feature_d, 128, activation),                
+                vgg_layer(128, 64, activation)
+                )
+        # 64 x 64
+        self.upc5 = nn.Sequential(
+                vgg_layer(64*2 + self.added_feature_d, 64, activation),                                            
+                nn.Conv2d(64, nc, 3, 1, 1),
+                nn.Sigmoid()
+                )
+        self.up = nn.UpsamplingNearest2d(scale_factor=2)
+
+    def forward(self, input):
+        vec, skip = input
+
+        was_batch_seq = (vec.dim() == 3)
+
+        if was_batch_seq:
+          skip = [inskip.view(-1,inskip.size(-3),inskip.size(-2),inskip.size(-1)) for inskip in skip]
+
+        d1 = self.upc1(vec.view(-1, self.dim, 1, 1)) # 1 -> 4
+        up1 = self.up(d1) # 4 -> 8
+        d2 = self.upc2(torch.cat([up1, skip[3]], 1)) # 8 x 8
+        up2 = self.up(d2) # 8 -> 16
+        d3 = self.upc3(torch.cat([up2, skip[2]], 1)) # 16 x 16
+        up3 = self.up(d3) # 8 -> 32
+        d4 = self.upc4(torch.cat([up3, skip[1]], 1)) # 32 x 32
+        up4 = self.up(d4) # 32 -> 64
+        output = self.upc5(torch.cat([up4, skip[0]], 1)) # 64 x 64
+
+        if was_batch_seq:
+          output = output.view(self.batch_size,-1,self.nc,64,64)
+
+        return output
 
 
 

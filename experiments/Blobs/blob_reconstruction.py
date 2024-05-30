@@ -4,7 +4,7 @@ sys.path.append('/home/chen/MScProject/Code')
 import torch
 import matplotlib.pyplot as plt
 from utils import torch_to_numpy
-from splatCoords import splat_coord
+from Code.splatCoords import splat_coord
 
 for size in [64]:
 

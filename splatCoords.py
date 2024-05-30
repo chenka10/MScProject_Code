@@ -15,7 +15,7 @@ def rotation_matrices(thetas):
     
     return rotation_matrices
 
-def splat_coord(blob_data,size=64,c=500,s=1,a=1.0):   
+def splat_coord(blob_data,size=64,c=500):   
 
     device = blob_data.device 
 
@@ -54,3 +54,14 @@ def splat_coord(blob_data,size=64,c=500,s=1,a=1.0):
     res = torch.sigmoid(s_inputs[:,None,None] - c*matmul)
 
     return res.unsqueeze(1)
+
+def generate_blobs_image(blobs,img_size=64):
+
+    res_image = torch.zeros([1,img_size,img_size])
+
+    for blob_data in blobs:
+        curr_splat = splat_coord(blob_data,img_size)
+        res_image = torch.mul(res_image,1-curr_splat)
+        res_image = torch.add(res_image,curr_splat)
+
+    return res_image

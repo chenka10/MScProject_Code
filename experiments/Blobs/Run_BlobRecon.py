@@ -87,10 +87,10 @@ blobs = [
 model = BlobReconstructor(256,blobs,params['batch_size']).to(device)
 optimizer = optim.Adam(model.parameters(), lr=params['lr'])
 
-models_dir = f'/home/chen/MScProject/Code/experiments/Blobs/seed_2_{seed}_models'    
+models_dir = f'/home/chen/MScProject/Code/experiments/Blobs/seed_3_{seed}_models'    
 os.makedirs(models_dir, exist_ok=True)
 
-images_dir = f'/home/chen/MScProject/Code/experiments/Blobs/seed_2_{seed}_images'
+images_dir = f'/home/chen/MScProject/Code/experiments/Blobs/seed_3_{seed}_images'
 os.makedirs(images_dir, exist_ok=True)
 
 base_frame = torch.randn(dataset_test[0][0][0].size()).to(device)

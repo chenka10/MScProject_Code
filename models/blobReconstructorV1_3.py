@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
-from vgg import vgg_layer, Encoder, VGGEncoderDecoder
+from vgg import Encoder,MultiSkipsDecoder
+from models.lstm import lstm
 from splatCoords import splat_coord
 
 def to_homogeneous(points):
@@ -18,68 +19,6 @@ def from_homogeneous(points):
 
     return points
 
-
-class MultiSkipsDecoder(nn.Module):
-    def __init__(self, dim, added_feature_d, nc=1, batch_size = None, activation = 'l_relu'):
-        super(MultiSkipsDecoder, self).__init__()
-        self.dim = dim
-        self.batch_size = batch_size
-        self.nc = nc   
-        self.added_feature_d = added_feature_d
-
-        # 1 x 1 -> 4 x 4
-        self.upc1 = nn.Sequential(
-                nn.ConvTranspose2d(dim, 512, 4, 1, 0),
-                nn.BatchNorm2d(512),
-                nn.LeakyReLU(0.2, inplace=True)
-                )
-        # 8 x 8
-        self.upc2 = nn.Sequential(
-                vgg_layer(512*2, 512, activation),
-                vgg_layer(512, 512, activation),
-                vgg_layer(512, 256, activation)
-                )
-        # 16 x 16
-        self.upc3 = nn.Sequential(
-                vgg_layer(256*2, 256, activation),
-                vgg_layer(256, 256, activation),
-                vgg_layer(256, 128, activation)
-                )
-        # 32 x 32
-        self.upc4 = nn.Sequential(
-                vgg_layer(128*2, 128, activation),                
-                vgg_layer(128, 64, activation)
-                )
-        # 64 x 64
-        self.upc5 = nn.Sequential(
-                vgg_layer(64*2, 64, activation),                                            
-                nn.Conv2d(64, nc, 3, 1, 1),
-                nn.Sigmoid()
-                )
-        self.up = nn.UpsamplingNearest2d(scale_factor=2)
-
-    def forward(self, input):
-        vec, skip = input
-
-        was_batch_seq = (vec.dim() == 3)
-
-        if was_batch_seq:
-          skip = [inskip.view(-1,inskip.size(-3),inskip.size(-2),inskip.size(-1)) for inskip in skip]
-
-        d1 = self.upc1(vec.view(-1, self.dim, 1, 1)) # 1 -> 4
-        up1 = self.up(d1) # 4 -> 8
-        d2 = self.upc2(torch.cat([up1, skip[3]], 1)) # 8 x 8
-        up2 = self.up(d2) # 8 -> 16
-        d3 = self.upc3(torch.cat([up2, skip[2]], 1)) # 16 x 16
-        up3 = self.up(d3) # 8 -> 32
-        d4 = self.upc4(torch.cat([up3, skip[1]], 1)) # 32 x 32
-        up4 = self.up(d4) # 32 -> 64
-        output = self.upc5(torch.cat([up4, skip[0]], 1)) # 64 x 64
-
-        if was_batch_seq:
-          output = output.view(self.batch_size,-1,self.nc,64,64)
-
-        return output
 
 class PositionEncoder(nn.Module):
     def __init__(self):
@@ -104,31 +43,17 @@ class BlobConfig:
         self.a_range = a_range
         self.side = side
 
-class BlobReconstructorNextFrame(nn.Module):
-    def __init__(self, hidden_dim, blob_configs, batch_size = None, activation = 'l_relu'):
-        super(BlobReconstructorNextFrame, self).__init__()
-        self.encoder_background = Encoder(hidden_dim, 3, batch_size, activation)        
-        self.position_encoders = nn.ModuleList()      
-        self.blob_transform = nn.ModuleList()  
-        for blob_config in blob_configs:
-            self.position_encoders.append(PositionEncoder()) 
-            self.blob_transform.append(nn.Sequential(
-                vgg_layer(4,64,activation),
-                vgg_layer(64,64,activation),
-                vgg_layer(64,4,activation),
-            ))           
-        
-        self.blob_configs = blob_configs
-        self.num_blobs = len(blob_configs)
+class BlobReconstructorV1_3(nn.Module):
+    def __init__(self, lstm, position_encoders):
+        super(BlobReconstructorV1_3, self).__init__()
 
-        blob_f_size = 4
+        self.lstm = lstm
+        self.position_encoders = position_encoders
 
-        self.blobs_f = nn.Parameter(torch.randn(self.num_blobs,blob_f_size))
-        # self.decoder = MultiSkipsDecoder(hidden_dim,self.num_blobs*blob_f_size, 3, batch_size, activation)        
-        self.decoder = VGGEncoderDecoder(hidden_dim,3,batch_size,activation)
+        self.vgg_encoder = Encoder(256, 3)
+        self.vgg_decoder = MultiSkipsDecoder(256,1,3)
 
-        self.unet = VGGEncoderDecoder(64,6,batch_size,activation)     
-        self.background_unet = VGGEncoderDecoder(64,3,batch_size,activation)
+      
 
     def forward(self, x_tm1, positions):
 

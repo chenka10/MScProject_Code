@@ -106,6 +106,8 @@ class BlobConfig:
 
 class PositionToBlobs(nn.Module):
     def __init__(self, blob_configs):
+        super(PositionToBlobs, self).__init__()
+
         self.blob_configs = blob_configs        
         self.position_encoders = nn.ModuleList()
 
@@ -115,6 +117,7 @@ class PositionToBlobs(nn.Module):
     def forward(self, positions):
 
         blobs_data = []
+        device = positions.device
 
         for i,blob_config in enumerate(self.blob_configs):
             
@@ -131,78 +134,74 @@ class PositionToBlobs(nn.Module):
             blob_data[:,4] = torch.sigmoid(blob_data[:,4])*torch.pi     
 
             blobs_data.append(blob_data) 
-            
+
         return blobs_data
+    
+class BlobsToFeatureMaps(nn.Module):
+    def __init__(self, blob_f_size, target_image_size):
+        super(BlobsToFeatureMaps, self).__init__()
+        self.blobs_f = nn.Parameter(torch.randn(blob_f_size))
+        self.target_image_size = target_image_size
+        self.blob_transform = nn.Sequential(
+            vgg_layer(blob_f_size,64,'l_relu'),
+            vgg_layer(64,64,'l_relu'),
+            vgg_layer(64,blob_f_size,'l_relu'),
+        )
+
+    def forward(self, blob_data):
+        size = self.target_image_size            
+        curr_blob_data = blob_data.clone()            
+        blobs_grayscale_map = splat_coord(curr_blob_data,size)
+        blobs_feature_map = self.blob_transform(blobs_grayscale_map*self.blobs_f[None,:,None,None])
+
+        return blobs_feature_map, blobs_grayscale_map
 
 
 class BlobReconstructor(nn.Module):
     def __init__(self, hidden_dim, blob_configs, batch_size = None, activation = 'l_relu'):
         super(BlobReconstructor, self).__init__()
         self.encoder_background = Encoder(hidden_dim, 3, batch_size, activation)        
-        self.position_encoders = nn.ModuleList()      
-        self.blob_transform = nn.ModuleList()  
-        for blob_config in blob_configs:
-            self.position_encoders.append(PositionEncoder()) 
-            self.blob_transform.append(nn.Sequential(
-                vgg_layer(4,64,activation),
-                vgg_layer(64,64,activation),
-                vgg_layer(64,4,activation),
-            ))           
-        
-        self.blob_configs = blob_configs
-        self.num_blobs = len(blob_configs)
 
         blob_f_size = 4
 
-        self.blobs_f = nn.Parameter(torch.randn(self.num_blobs,blob_f_size))
-        # self.decoder = MultiSkipsDecoder(hidden_dim,self.num_blobs*blob_f_size, 3, batch_size, activation)        
+        self.positions_to_blobs = PositionToBlobs(blob_configs)
+        self.blobs_to_maps = nn.ModuleList()
+
+        for _ in blob_configs:
+            self.blobs_to_maps.append(BlobsToFeatureMaps(blob_f_size,64))
+        
+        self.blob_configs = blob_configs
+        self.num_blobs = len(blob_configs)        
+
+        self.blobs_f = nn.Parameter(torch.randn(self.num_blobs,blob_f_size))        
         self.decoder = VGGEncoderDecoder(hidden_dim,3,batch_size,activation)
 
         self.unet = VGGEncoderDecoder(64,3,batch_size,activation)          
 
-    def forward(self, backgrounds, positions):
+    def forward(self, backgrounds, positions):  
 
-        blobs_data = []        
-        device = positions.device
-        
-        for i,blob_config in enumerate(self.blob_configs):
-            
-            if blob_config.side == 'right':
-                curr_pos = positions[:,:3]
-            else:
-                curr_pos = positions[:,3:]
-                
-            blob_data = self.position_encoders[i](curr_pos*100)                   
-        
-            blob_data[:,:2] = torch.sigmoid(blob_data[:,:2]) + torch.tensor([blob_config.start_y,blob_config.start_x]).to(device)
-            blob_data[:,2] += blob_config.start_s
-            blob_data[:,3] = blob_config.a_range[0] +torch.sigmoid(blob_data[:,3])*(blob_config.a_range[1]-blob_config.a_range[0])
-            blob_data[:,4] = torch.sigmoid(blob_data[:,4])*torch.pi     
-
-            blobs_data.append(blob_data)            
+        blobs_data = self.positions_to_blobs(positions)          
         
         blobs_images_visualization = None    
-        
-        size = 64
-            
-        blobs_opacities = []    
-        blobs_images = []            
-        for i,blob_data in enumerate(blobs_data):
-            curr_blob_data = blob_data.clone()            
-            blobs_opacities.append(splat_coord(curr_blob_data,size))
-            blob_img = self.blob_transform[i](blobs_opacities[-1]*self.blobs_f[i,:][None,:,None,None])
-            blobs_images.append(blob_img)        
+
+        blobs_feature_maps = []
+        blobs_grayscale_maps = []
+
+        for blob_i in range(len(blobs_data)):
+            blobs_feature_map, blobs_grayscale_map = self.blobs_to_maps[blob_i](blobs_data[blob_i])     
+            blobs_feature_maps.append(blobs_feature_map)
+            blobs_grayscale_maps.append(blobs_grayscale_map)     
 
         if blobs_images_visualization is None:
-            blobs_images_visualization = [bo.detach().cpu() for bo in blobs_opacities]
+            blobs_images_visualization = [bo.detach().cpu() for bo in blobs_grayscale_maps]
         
         output_low = self.decoder(backgrounds)        
 
-        for i,blob_img in enumerate(blobs_images):
-            output_low=torch.mul(output_low,(1-blobs_opacities[i]))
-            output_low=torch.add(output_low,blob_img[:,:3,:,:]*(blobs_opacities[i]))
+        for i,blob_img in enumerate(blobs_feature_maps):
+            output_low=torch.mul(output_low,(1-blobs_grayscale_maps[i]))
+            output_low=torch.add(output_low,blob_img[:,:3,:,:]*(blobs_grayscale_maps[i]))
 
         output_high = self.unet(output_low)
 
-        return output_high, output_low, blobs_opacities
+        return output_high, output_low, blobs_grayscale_maps
     

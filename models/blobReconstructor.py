@@ -94,7 +94,22 @@ class PositionEncoder(nn.Module):
                                
 
     def forward(self, positions):
-        return self.enc(positions)        
+        return self.enc(positions)  
+
+class KinematicsEncoder(nn.Module):
+    def __init__(self):
+        super(KinematicsEncoder, self).__init__()
+        self.enc = nn.Sequential(nn.Linear(12,128),
+                               nn.LeakyReLU(),
+                               nn.Linear(128,128),
+                               nn.LeakyReLU(),
+                               nn.Linear(128,128),
+                               nn.LeakyReLU(),
+                               nn.Linear(128,5))
+                               
+
+    def forward(self, positions):
+        return self.enc(positions)  
 
 class BlobConfig:
     def __init__(self, start_x, start_y, start_s, a_range, side):
@@ -122,9 +137,9 @@ class PositionToBlobs(nn.Module):
         for i,blob_config in enumerate(self.blob_configs):
             
             if blob_config.side == 'right':
-                curr_pos = positions[:,:3]
+                curr_pos = positions[:,:12]
             else:
-                curr_pos = positions[:,3:]
+                curr_pos = positions[:,12:]
                 
             blob_data = self.position_encoders[i](curr_pos*100)                   
         
@@ -137,22 +152,114 @@ class PositionToBlobs(nn.Module):
 
         return blobs_data
     
+def rotate_point(point_x, point_y, pivot_x, pivot_y, theta):
+    """
+    Rotate a point around a pivot by theta degrees.
+
+    :param point: Tuple (x, y) representing the point to rotate.
+    :param pivot: Tuple (x, y) representing the pivot point around which to rotate.
+    :param theta: The angle in degrees by which to rotate the point.
+    :return: Tuple (x', y') representing the rotated point.
+    """
+    # Convert theta to radians
+    theta_rad = -theta
+    
+    # Translate point to origin
+    translated_x = point_x - pivot_x
+    translated_y = point_y - pivot_y
+    
+    # Apply the rotation matrix
+    rotated_x = translated_x * torch.cos(theta_rad) - translated_y * torch.sin(theta_rad)
+    rotated_y = translated_x * torch.sin(theta_rad) + translated_y * torch.cos(theta_rad)
+    
+    # Translate the point back
+    final_x = rotated_x + pivot_x
+    final_y = rotated_y + pivot_y
+    
+    return torch.stack([final_x, final_y],dim=-1)
+
+class KinematicsToBlobs(nn.Module):
+    def __init__(self, blob_configs):
+        super(KinematicsToBlobs, self).__init__()
+
+        self.blob_configs = blob_configs        
+        self.kinematics_encoders = nn.ModuleList()
+
+        for blob_config in blob_configs:
+            self.kinematics_encoders.append(KinematicsEncoder())            
+
+    def forward(self, kinematics, include_grippers=True):
+
+        blobs_data = []
+        device = kinematics.device        
+
+        for i,blob_config in enumerate(self.blob_configs):
+
+            if i==2:
+                break
+            
+            if blob_config.side == 'right':
+                curr_pos = kinematics[:,:12]
+            else:
+                curr_pos = kinematics[:,12:]
+                            
+            blob_data = self.kinematics_encoders[i](curr_pos)                   
+        
+            blob_data[:,:2] = torch.sigmoid(blob_data[:,:2]) + torch.tensor([blob_config.start_y,blob_config.start_x]).to(device)
+            blob_data[:,2] += blob_config.start_s
+            blob_data[:,3] = blob_config.a_range[0] +torch.sigmoid(blob_data[:,3])*(blob_config.a_range[1]-blob_config.a_range[0])
+            blob_data[:,4] = torch.sigmoid(blob_data[:,4])*torch.pi                 
+
+            blobs_data.append(blob_data) 
+
+        if include_grippers:
+            for i in [2,3]:
+                blob_config = self.blob_configs[i]
+                if blob_config.side == 'right':
+                    curr_pos = kinematics[:,:12]
+                else:
+                    curr_pos = kinematics[:,12:]
+
+                gripper_data = self.kinematics_encoders[i](curr_pos)
+                
+                factor = 1
+                if i==2:
+                    factor = -1         
+
+                gripper_data[:,:2] = rotate_point(blobs_data[i-2][:,0]+factor*(0.125*blobs_data[i-2][:,3] + 0.007*blobs_data[i-2][:,2]),
+                                                    blobs_data[i-2][:,1],
+                                                    blobs_data[i-2][:,0],
+                                                    blobs_data[i-2][:,1],
+                                                    -blobs_data[i-2][:,4])
+                gripper_data[:,2] += blob_config.start_s
+                gripper_data[:,3] = blob_config.a_range[0] +torch.sigmoid(gripper_data[:,3])*(blob_config.a_range[1]-blob_config.a_range[0])
+                gripper_data[:,4] = factor*torch.sigmoid(gripper_data[:,4])*torch.pi 
+
+                blobs_data.append(gripper_data)
+
+        return blobs_data
+    
 class BlobsToFeatureMaps(nn.Module):
     def __init__(self, blob_f_size, target_image_size):
         super(BlobsToFeatureMaps, self).__init__()
         self.blobs_f = nn.Parameter(torch.randn(blob_f_size))
+        self.blobs_f.requires_grad = True
         self.target_image_size = target_image_size
-        self.blob_transform = nn.Sequential(
-            vgg_layer(blob_f_size,64,'l_relu'),
-            vgg_layer(64,64,'l_relu'),
-            vgg_layer(64,blob_f_size,'l_relu'),
+        self.blob_f_transform = nn.Sequential(
+            nn.Linear(blob_f_size,64),
+            nn.LeakyReLU(),
+            nn.Linear(64,64),
+            nn.LeakyReLU(),
+            nn.Linear(64,blob_f_size),
+            nn.Sigmoid()
         )
+        
 
     def forward(self, blob_data):
         size = self.target_image_size            
         curr_blob_data = blob_data.clone()            
         blobs_grayscale_map = splat_coord(curr_blob_data,size)
-        blobs_feature_map = self.blob_transform(blobs_grayscale_map*self.blobs_f[None,:,None,None])
+        blobs_feature_map = blobs_grayscale_map*self.blob_f_transform(self.blobs_f)[None,:,None,None]
 
         return blobs_feature_map, blobs_grayscale_map
 
@@ -175,7 +282,7 @@ class BlobReconstructor(nn.Module):
 
         blob_f_size = 3
 
-        self.positions_to_blobs = PositionToBlobs(blob_configs)
+        self.positions_to_blobs = KinematicsToBlobs(blob_configs)
         self.blobs_to_maps = nn.ModuleList()
 
         for _ in blob_configs:
@@ -189,9 +296,9 @@ class BlobReconstructor(nn.Module):
 
         self.unet = VGGEncoderDecoder(64,3,batch_size,activation)          
 
-    def forward(self, backgrounds, positions):  
+    def forward(self, backgrounds, positions, include_gripper):  
 
-        blobs_data = self.positions_to_blobs(positions)          
+        blobs_data = self.positions_to_blobs(positions,include_gripper)                  
         
         blobs_images_visualization = None    
 

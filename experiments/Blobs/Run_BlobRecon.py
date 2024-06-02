@@ -75,22 +75,26 @@ dataset_test = ConcatDataset(JigsawsImageDataset(df_test,config,1,transform,samp
 dataloader_test = DataLoader(dataset_test,params['batch_size'],True,drop_last=True)
 
 position_indices = config.kinematic_slave_position_indexes
+rotation_indices = config.kinematic_slave_rotation_indexes
 
 mse = torch.nn.MSELoss()
 
 
 blobs = [
     BlobConfig(0.25,0,4,[2,4],'right'),
-    BlobConfig(-0.25,0,4,[2,4],'left')
+    BlobConfig(-0.25,0,4,[2,4],'left'),
+
+    BlobConfig(0.05,0,2,[0.5,2],'right'),
+    BlobConfig(-0.05,0,2,[0.5,2],'left')
 ]
 
 model = BlobReconstructor(256,blobs,params['batch_size']).to(device)
 optimizer = optim.Adam(model.parameters(), lr=params['lr'])
 
-models_dir = f'/home/chen/MScProject/Code/experiments/Blobs/seed_3_{seed}_models'    
+models_dir = f'/home/chen/MScProject/Code/experiments/Blobs/adding_rotation_seed_{seed}_models'    
 os.makedirs(models_dir, exist_ok=True)
 
-images_dir = f'/home/chen/MScProject/Code/experiments/Blobs/seed_3_{seed}_images'
+images_dir = f'/home/chen/MScProject/Code/experiments/Blobs/adding_rotation_seed_{seed}_images'
 os.makedirs(images_dir, exist_ok=True)
 
 base_frame = torch.randn(dataset_test[0][0][0].size()).to(device)
@@ -102,17 +106,20 @@ for epoch in (range(params['num_epochs'])):
     Loss_train = 0.0
     for batch in tqdm(dataloader_train):
         frames = batch[0].squeeze(1).to(device)
-        positions = batch[1].squeeze(1)[:,position_indices].to(device)
+        positions = batch[1].squeeze(1)[:,position_indices].to(device)*100
+        rotations = batch[1].squeeze(1)[:,rotation_indices].to(device)
+        kinematics = torch.cat([positions[:,:3], rotations[:,:9], positions[:,3:], rotations[:,9:]],-1)
 
         batch_size = frames.size(0)
 
         optimizer.zero_grad()
 
-        output_high, output_low, blobs = model(base_frame.repeat(batch_size,1,1,1),positions)
+        include_grippers = epoch>5
+        output_high, output_low, blobs = model(base_frame.repeat(batch_size,1,1,1),kinematics,include_grippers)
 
         MSE_Loss = mse(output_low, frames)
         PER_Loss = loss_fn_vgg(output_high, frames).mean()
-        Loss = params['gamma']*MSE_Loss + PER_Loss
+        Loss = params['gamma']*MSE_Loss
         Loss_train += Loss.item()
         Loss.backward()
         optimizer.step()    
@@ -122,22 +129,24 @@ for epoch in (range(params['num_epochs'])):
     with torch.no_grad():        
         for batch in tqdm(dataloader_test):
             frames = batch[0].squeeze(1).to(device)
-            positions = batch[1].squeeze(1)[:,position_indices].to(device)
-
+            positions = batch[1].squeeze(1)[:,position_indices].to(device)*100
+            rotations = batch[1].squeeze(1)[:,rotation_indices].to(device)
+            kinematics = torch.cat([positions[:,:3], rotations[:,:9], positions[:,3:], rotations[:,9:]],-1)
             batch_size = frames.size(0)
 
-            output_high, output_low, blobs = model(base_frame.repeat(batch_size,1,1,1),positions)
+            include_grippers = epoch>5
+            output_high, output_low, blobs = model(base_frame.repeat(batch_size,1,1,1),kinematics,include_grippers)
 
             MSE_Loss = mse(output_low, frames)
             PER_Loss = loss_fn_vgg(output_high, frames).mean()
-            Loss = params['gamma']*MSE_Loss + PER_Loss
+            Loss = params['gamma']*MSE_Loss
             Loss_test += Loss.item()
 
     valid_loss = Loss_test/len(dataloader_test)
-    if best_valid_loss > valid_loss:
-        best_valid_loss = valid_loss
-        torch.save(model.state_dict(), os.path.join(models_dir,f"model_{epoch}.pth"))
-        print('new best model')
+    # if best_valid_loss > valid_loss:
+    best_valid_loss = valid_loss
+    torch.save(model.state_dict(), os.path.join(models_dir,f"model_{epoch}.pth"))
+    print('new best model')
 
 
     print(Loss_train/len(dataloader_train))
@@ -148,10 +157,18 @@ for epoch in (range(params['num_epochs'])):
     plt.imshow(torch_to_numpy(output_high[0].detach().cpu()))
     plt.subplot(3,2,2)
     plt.imshow(torch_to_numpy(frames[0].detach().cpu()))
-    plt.subplot(3,2,3)
-    plt.imshow(torch_to_numpy(blobs[1][0].detach().cpu()))        
-    plt.subplot(3,2,4)
-    plt.imshow(torch_to_numpy(blobs[0][0].detach().cpu()))        
+
+    if len(blobs)==2:
+        plt.subplot(3,2,3)
+        plt.imshow(torch_to_numpy(blobs[1][0].detach().cpu()))        
+        plt.subplot(3,2,4)
+        plt.imshow(torch_to_numpy(blobs[0][0].detach().cpu())) 
+    else:
+        plt.subplot(3,2,3)
+        plt.imshow(torch_to_numpy(blobs[1][0].detach().cpu()+blobs[3][0].detach().cpu()))        
+        plt.subplot(3,2,4)
+        plt.imshow(torch_to_numpy(blobs[0][0].detach().cpu()+blobs[2][0].detach().cpu()))        
+
     plt.subplot(3,2,5)
     plt.imshow(torch_to_numpy(output_low[0].detach().cpu()))               
     plt.savefig(os.path.join(images_dir,f'test_{epoch}.png'))

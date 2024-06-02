@@ -18,11 +18,12 @@ loss_fn_vgg = lpips.LPIPS(net='vgg')
 
 mse = nn.MSELoss(reduce=False)
 
-def train(models, position_to_blobs, dataloader_train, optimizer, params, config, device):
+def train(models, pre_trained_models, position_to_blobs, dataloader_train, optimizer, params, config, device):
 
   loss_fn_vgg.to(device)
 
-  frame_encoder, frame_decoder, generation_lstm, blobs_to_maps = models
+  frame_encoder, frame_decoder, generation_lstm, blobs_to_maps = pre_trained_models
+  blob_gen_lstm, blob_prior_lstm = models
 
   # set all models to train 
   for model in models:

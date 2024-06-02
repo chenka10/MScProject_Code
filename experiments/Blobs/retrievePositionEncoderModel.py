@@ -15,13 +15,16 @@ import torch
 
 blobs = [
     BlobConfig(0.25,0,4,[2,4],'right'),
-    BlobConfig(-0.25,0,4,[2,4],'left')
+    BlobConfig(-0.25,0,4,[2,4],'left'),
+    
+    BlobConfig(0.05,0,2,[0.5,2],'right'),
+    BlobConfig(-0.05,0,2,[0.5,2],'left')
 ]
 
-models_dir = f'/home/chen/MScProject/Code/experiments/Blobs/seed_3_42_models' 
+models_dir = f'/home/chen/MScProject/Code/experiments/Blobs/adding_rotation_seed_42_models' 
 
 model = BlobReconstructor(256,blobs,16)
-model.load_state_dict(torch.load(os.path.join(models_dir,'model_5.pth')))
+model.load_state_dict(torch.load(os.path.join(models_dir,'model_17.pth')))
 model.eval()  # Set the model to evaluation mode
 
 positions_to_blobs = model.positions_to_blobs

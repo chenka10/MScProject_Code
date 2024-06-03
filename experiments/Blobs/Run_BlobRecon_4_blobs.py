@@ -81,17 +81,20 @@ mse = torch.nn.MSELoss()
 
 
 blobs = [
-    BlobConfig(0.25,0,4,[2,5],-torch.pi/7,'right'),
-    BlobConfig(-0.25,0,4,[2,5],0,'left')
+    BlobConfig(0.25,0,4,[2,4],'right'),
+    BlobConfig(-0.25,0,4,[2,4],'left'),
+
+    BlobConfig(0.05,0,2,[0.5,2],'right'),
+    BlobConfig(-0.05,0,2,[0.5,2],'left')
 ]
 
 model = BlobReconstructor(256,blobs,params['batch_size']).to(device)
 optimizer = optim.Adam(model.parameters(), lr=params['lr'])
 
-models_dir = f'/home/chen/MScProject/Code/experiments/Blobs/2_blobs_seed_{seed}_models'    
+models_dir = f'/home/chen/MScProject/Code/experiments/Blobs/adding_rotation_seed_{seed}_models'    
 os.makedirs(models_dir, exist_ok=True)
 
-images_dir = f'/home/chen/MScProject/Code/experiments/Blobs/2_blobs_seed_{seed}_images'
+images_dir = f'/home/chen/MScProject/Code/experiments/Blobs/adding_rotation_seed_{seed}_images'
 os.makedirs(images_dir, exist_ok=True)
 
 base_frame = torch.randn(dataset_test[0][0][0].size()).to(device)
@@ -143,7 +146,6 @@ for epoch in (range(params['num_epochs'])):
     # if best_valid_loss > valid_loss:
     best_valid_loss = valid_loss
     torch.save(model.state_dict(), os.path.join(models_dir,f"model_{epoch}.pth"))
-    torch.save(model.positions_to_blobs.state_dict(),os.path.join(models_dir,f"positions_to_blobs_{epoch}.pth"))
     print('new best model')
 
 

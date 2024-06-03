@@ -60,6 +60,7 @@ def validate(models, position_to_blobs, dataloader_valid, params, config, device
 
     # storage for genrated frames
     generated_seq = []
+    generated_grayscale_maps = []
 
     # storage for computed losses
     loss_MSE = torch.tensor(0.0).to(device)
@@ -79,18 +80,25 @@ def validate(models, position_to_blobs, dataloader_valid, params, config, device
       feature_maps = []
       grayscale_maps = []
 
-      num_blobs = 4
+      num_blobs = len(position_to_blobs.kinematics_encoders) # TODO: figure a better way to get blob number
 
       for i in range(len(blobs_to_maps)):
         f,g = blobs_to_maps[i](blob_datas[i%num_blobs])
         feature_maps.append(f)
         grayscale_maps.append(g)
+
+      generated_grayscale_maps.append(sum(grayscale_maps[:2]).detach().cpu())
       
       combined_blobs_feature_maps = []
       for i in range(len(blobs_to_maps)//num_blobs):
-        combined_blobs_feature_maps.append(combine_blob_maps(torch.zeros_like(feature_maps[i*num_blobs]),
-                                                        [feature_maps[i*num_blobs],feature_maps[i*num_blobs+1],feature_maps[i*num_blobs+2],feature_maps[i*num_blobs+3]],
-                                                        [grayscale_maps[i*num_blobs],grayscale_maps[i*num_blobs+1],grayscale_maps[i*num_blobs+2],grayscale_maps[i*num_blobs+3]]))
+        if num_blobs==2:
+          combined_blobs_feature_maps.append(combine_blob_maps(torch.zeros_like(feature_maps[i*num_blobs]),
+                                                          [feature_maps[i*num_blobs],feature_maps[i*num_blobs+1]],
+                                                          [grayscale_maps[i*num_blobs],grayscale_maps[i*num_blobs+1]]))
+        if num_blobs==4:
+          combined_blobs_feature_maps.append(combine_blob_maps(torch.zeros_like(feature_maps[i*num_blobs]),
+                                                          [feature_maps[i*num_blobs],feature_maps[i*num_blobs+1],feature_maps[i*num_blobs+2],feature_maps[i*num_blobs+3]],
+                                                          [grayscale_maps[i*num_blobs],grayscale_maps[i*num_blobs+1],grayscale_maps[i*num_blobs+2],grayscale_maps[i*num_blobs+3]]))
 
 
       # keep loading past frames (for conditioning), once conditioning is over, load previously encoded frames
@@ -127,11 +135,11 @@ def validate(models, position_to_blobs, dataloader_valid, params, config, device
 
     if loss_MSE_per_batch[worst_mse_batch_index]>worst_batch_mse: 
       worst_batch_mse = loss_MSE_per_batch[worst_mse_batch_index]
-      worst_batch_seq_ind = ([frames.detach().cpu(), gestures.detach().cpu()],generated_seq,worst_mse_batch_index)
+      worst_batch_seq_ind = ([frames.detach().cpu(), gestures.detach().cpu()],generated_seq,generated_grayscale_maps,worst_mse_batch_index)
 
     if loss_MSE_per_batch[best_mse_batch_index]<best_batch_mse:
       best_batch_mse = loss_MSE_per_batch[best_mse_batch_index]
-      best_batch_seq_ind = ([frames.detach().cpu(), gestures.detach().cpu()],generated_seq,best_mse_batch_index)
+      best_batch_seq_ind = ([frames.detach().cpu(), gestures.detach().cpu()],generated_seq,generated_grayscale_maps,best_mse_batch_index)
 
     loss_tot = loss_MSE + loss_KLD
     loss += torch.tensor([loss_tot.item(),loss_MSE.item(),loss_PER.item(),loss_KLD.item()])  
@@ -139,8 +147,8 @@ def validate(models, position_to_blobs, dataloader_valid, params, config, device
   loss /= len(dataloader_valid)
   ssim_per_future_frame /= len(dataloader_valid)
 
-  mover_batch_seq_ind = ([frames.detach().cpu(), gestures.detach().cpu()], generated_seq, batch_mover)
-  non_mover_batch_seq_ind = ([frames.detach().cpu(), gestures.detach().cpu()], generated_seq, batch_least_mover)
+  mover_batch_seq_ind = ([frames.detach().cpu(), gestures.detach().cpu()], generated_seq, generated_grayscale_maps, batch_mover)
+  non_mover_batch_seq_ind = ([frames.detach().cpu(), gestures.detach().cpu()], generated_seq, generated_grayscale_maps, batch_least_mover)
 
   return loss, ssim_per_future_frame, mover_batch_seq_ind, non_mover_batch_seq_ind, best_batch_seq_ind, worst_batch_seq_ind
 

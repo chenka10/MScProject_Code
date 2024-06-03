@@ -1,3 +1,4 @@
+from Code.experiments.Blobs_LSTM_gbp.blob_maps_generation import generate_blob_maps
 from JigsawsConfig import main_config
 from pytorch_msssim import ssim
 from tqdm import tqdm
@@ -40,12 +41,17 @@ def train(models, pre_trained_models, position_to_blobs, dataloader_train, optim
     # prepare lstms for batch (set internal batch-size and set default hidden state)
     generation_lstm.batch_size = batch_size
     generation_lstm.hidden = generation_lstm.init_hidden()
+    blob_gen_lstm.batch_size = batch_size
+    blob_gen_lstm.hidden = blob_gen_lstm.init_hidden()
+    blob_prior_lstm.batch_size = batch_size
+    blob_prior_lstm.hidden = blob_prior_lstm.init_hidden()
 
     # clear optimizer
     optimizer.zero_grad()
 
     # encode all frames (past and future)    
-    seq = [frame_encoder(frames[:,i,:,:,:]) for i in range(params['seq_len'])]    
+    seq = [frame_encoder(frames[:,i,:,:,:]) for i in range(params['seq_len'])]
+    blobs_seq = [torch.concat(position_to_blobs(kinematics[:,i,:]),dim=-1) for i in range(params['seq_len'])] 
 
     # storage for genrated frames
     generated_seq = []
@@ -60,30 +66,25 @@ def train(models, pre_trained_models, position_to_blobs, dataloader_train, optim
     
     for t in range(1,params['seq_len']):
 
-      blob_datas = position_to_blobs(kinematics[:,t,:])
-      feature_maps = []
-      grayscale_maps = []
+      if t <= params['past_count']:
+        blobs_t_minus_one = blobs_seq[t-1]
+      else:
+        blobs_t_minus_one = blobs_t # setting the current t_minus_1 to be the previous t
 
-      num_blobs = 4
-
-      for i in range(len(blobs_to_maps)):
-        f,g = blobs_to_maps[i](blob_datas[i%num_blobs])
-        feature_maps.append(f)
-        grayscale_maps.append(g)
+      z,mu,logvar = blob_prior_lstm(blobs_t_minus_one)
+      blobs_diff = blob_gen_lstm(torch.cat([blobs_t_minus_one,z,gestures_onehot[:,t,:]],dim=-1)).float()
+      blobs_t = blobs_t_minus_one + blobs_diff
+      combined_blobs_feature_maps = generate_blob_maps(blobs_to_maps, [blobs_t[:,:5],
+                                                        blobs_t[:,5:10],
+                                                        blobs_t[:,10:15],
+                                                        blobs_t[:,15:]])
       
-      combined_blobs_feature_maps = []
-      for i in range(len(blobs_to_maps)//num_blobs):
-        combined_blobs_feature_maps.append(combine_blob_maps(torch.zeros_like(feature_maps[i*num_blobs]),
-                                                        [feature_maps[i*num_blobs],feature_maps[i*num_blobs+1],feature_maps[i*num_blobs+2],feature_maps[i*num_blobs+3]],
-                                                        [grayscale_maps[i*num_blobs],grayscale_maps[i*num_blobs+1],grayscale_maps[i*num_blobs+2],grayscale_maps[i*num_blobs+3]]))
-
-      # frames_t = seq[i][0]
       frames_t_minus_one = seq[t-1][0]
 
       # load skip connections from the frame encoder for all conditioned frames
       # once conditioned frames are over kuup using skips from the last conditioned frame
       if t <= params['past_count']:
-        skips = seq[t-1][1] 
+        skips = seq[t-1][1]         
         skips[0] = torch.concat([skips[0],combined_blobs_feature_maps[0]],1)
         skips[1] = torch.concat([skips[1],combined_blobs_feature_maps[1]],1)
         skips[2] = torch.concat([skips[2],combined_blobs_feature_maps[2]],1)
@@ -106,6 +107,7 @@ def train(models, pre_trained_models, position_to_blobs, dataloader_train, optim
       mse_per_batch = mse(decoded_frames, frames[:,t,:,:,:]).sum(-1).sum(-1).sum(-1)
       loss_MSE += (distance_weight*mse_per_batch).mean()
       loss_PER += (distance_weight*loss_fn_vgg((decoded_frames*2)-1, (frames[:,t,:,:,:]*2)-1).sum(-1).sum(-1).sum(-1)).mean()      
+      loss_KLD += kl_criterion_normal(mu,logvar) 
 
       # for all predicted future frames compute SSIM with real future frames
       if t>=params['past_count']:

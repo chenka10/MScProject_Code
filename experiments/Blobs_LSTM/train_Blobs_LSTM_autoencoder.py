@@ -63,7 +63,7 @@ def train(models, position_to_blobs, dataloader_train, optimizer, params, config
       feature_maps = []
       grayscale_maps = []
 
-      num_blobs = 4
+      num_blobs = len(position_to_blobs.kinematics_encoders) # TODO: figure a better way to get blob number
 
       for i in range(len(blobs_to_maps)):
         f,g = blobs_to_maps[i](blob_datas[i%num_blobs])
@@ -72,9 +72,14 @@ def train(models, position_to_blobs, dataloader_train, optimizer, params, config
       
       combined_blobs_feature_maps = []
       for i in range(len(blobs_to_maps)//num_blobs):
-        combined_blobs_feature_maps.append(combine_blob_maps(torch.zeros_like(feature_maps[i*num_blobs]),
-                                                        [feature_maps[i*num_blobs],feature_maps[i*num_blobs+1],feature_maps[i*num_blobs+2],feature_maps[i*num_blobs+3]],
-                                                        [grayscale_maps[i*num_blobs],grayscale_maps[i*num_blobs+1],grayscale_maps[i*num_blobs+2],grayscale_maps[i*num_blobs+3]]))
+        if num_blobs==2:
+          combined_blobs_feature_maps.append(combine_blob_maps(torch.zeros_like(feature_maps[i*num_blobs]),
+                                                          [feature_maps[i*num_blobs],feature_maps[i*num_blobs+1]],
+                                                          [grayscale_maps[i*num_blobs],grayscale_maps[i*num_blobs+1]]))
+        if num_blobs==4:
+          combined_blobs_feature_maps.append(combine_blob_maps(torch.zeros_like(feature_maps[i*num_blobs]),
+                                                          [feature_maps[i*num_blobs],feature_maps[i*num_blobs+1],feature_maps[i*num_blobs+2],feature_maps[i*num_blobs+3]],
+                                                          [grayscale_maps[i*num_blobs],grayscale_maps[i*num_blobs+1],grayscale_maps[i*num_blobs+2],grayscale_maps[i*num_blobs+3]]))
 
       # frames_t = seq[i][0]
       frames_t_minus_one = seq[t-1][0]

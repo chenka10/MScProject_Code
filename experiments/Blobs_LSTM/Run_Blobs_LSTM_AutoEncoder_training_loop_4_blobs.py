@@ -12,16 +12,16 @@ from models.blobReconstructor import BlobConfig, KinematicsToBlobs, PositionToBl
 
 import torch.optim as optim
 from models.vgg import Encoder, MultiSkipsDecoder
-from models.lstm import lstm, gaussian_lstm
+from models.lstm import lstm
 from models.blob_position_encoder import PositionEncoder
 import os
 from utils import get_distance
 from datetime import datetime
 import torch
 import torch.nn as nn
-from experiments.Blobs_LSTM_gbp.train_Blobs_LSTM_gbp_autoencoder import train
-from experiments.Blobs_LSTM_gbp.validate_Blobs_LSTM_gbp_autoencoder import validate
-from experiments.Blobs_LSTM_gbp.Blobs_LSTM_DataSetup import get_dataloaders
+from experiments.Blobs_LSTM.train_Blobs_LSTM_autoencoder import train
+from experiments.Blobs_LSTM.validate_Blobs_LSTM_autoencoder import validate
+from experiments.Blobs_LSTM.Blobs_LSTM_DataSetup import get_dataloaders
 
 
 class DistanceLoss(nn.Module):
@@ -81,68 +81,44 @@ dataloader_train, dataloader_valid = get_dataloaders(params,config)
 now = datetime.now()
 timestamp = now.strftime("%Y%m%d_%H%M%S")  # Format: YYYYMMDD_HHMMSS
 
-positions_to_blobs_dir = '/home/chen/MScProject/Code/experiments/Blobs/seed_3_42_models'
-blobs_lstm_dir = '/home/chen/MScProject/Code/experiments/Blobs_LSTM/models_position/models_20240530_214809_1'
-models_dir = f'/home/chen/MScProject/Code/experiments/Blobs_LSTM_gbp/models_{params['conditioning']}/models_{timestamp}_{runid}/'
-images_dir = f'/home/chen/MScProject/Code/experiments/Blobs_LSTM_gbp/images_{params['conditioning']}/images_{timestamp}_{runid}/'
+positions_to_blobs_dir = '/home/chen/MScProject/Code/experiments/Blobs/adding_rotation_seed_42_models'
+models_dir = f'/home/chen/MScProject/Code/experiments/Blobs_LSTM/models_{params['conditioning']}/models_{timestamp}_{runid}/'
+images_dir = f'/home/chen/MScProject/Code/experiments/Blobs_LSTM/images_{params['conditioning']}/images_{timestamp}_{runid}/'
 os.makedirs(images_dir,exist_ok=True)    
 os.makedirs(models_dir,exist_ok=True)
 
 blob_feature_size = 16
 
 # Initialize model, loss function, and optimizer 
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~ pre-trained models ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-frame_encoder = Encoder(params['img_compressed_size'],3)
-frame_encoder.load_state_dict(torch.load(os.path.join(blobs_lstm_dir,'frame_encoder.pth')))
-frame_encoder.to(device)
-
-frame_decoder = MultiSkipsDecoder(params['img_compressed_size'],blob_feature_size,3)
-frame_decoder.load_state_dict(torch.load(os.path.join(blobs_lstm_dir,'frame_decoder.pth')))
-frame_decoder.to(device)
-
-generation_lstm = lstm(params['img_compressed_size'],params['img_compressed_size'],256,2,params['batch_size'],device)
-generation_lstm.load_state_dict(torch.load(os.path.join(blobs_lstm_dir,'generation_lstm.pth')))
-generation_lstm.to(device)
+frame_encoder = Encoder(params['img_compressed_size'],3).to(device)
+frame_decoder = MultiSkipsDecoder(params['img_compressed_size'],blob_feature_size,3).to(device)
+generation_lstm = lstm(params['img_compressed_size'],params['img_compressed_size'],256,2,params['batch_size'],device).to(device)
 
 blob_config = [
     BlobConfig(0.25,0,4,[2,4],'right'),
     BlobConfig(-0.25,0,4,[2,4],'left'),
         
-    # BlobConfig(0.05,0,2,[0.5,2],'right'),
-    # BlobConfig(-0.05,0,2,[0.5,2],'left')
+    BlobConfig(0.05,0,2,[0.5,2],'right'),
+    BlobConfig(-0.05,0,2,[0.5,2],'left')
 ]
 position_to_blobs = KinematicsToBlobs(blob_config)
 position_to_blobs.load_state_dict(torch.load(os.path.join(positions_to_blobs_dir,'positions_to_blobs.pth')))
 position_to_blobs.to(device)
-
-blobs_to_maps = nn.ModuleList([BlobsToFeatureMaps(blob_feature_size,64),BlobsToFeatureMaps(blob_feature_size,64),                               
-                               BlobsToFeatureMaps(blob_feature_size,32),BlobsToFeatureMaps(blob_feature_size,32),                               
-                               BlobsToFeatureMaps(blob_feature_size,16),BlobsToFeatureMaps(blob_feature_size,16),                               
+blobs_to_maps = nn.ModuleList([BlobsToFeatureMaps(blob_feature_size,64),BlobsToFeatureMaps(blob_feature_size,64),
+                               BlobsToFeatureMaps(blob_feature_size,64),BlobsToFeatureMaps(blob_feature_size,64),
+                               BlobsToFeatureMaps(blob_feature_size,32),BlobsToFeatureMaps(blob_feature_size,32),
+                               BlobsToFeatureMaps(blob_feature_size,32),BlobsToFeatureMaps(blob_feature_size,32),
+                               BlobsToFeatureMaps(blob_feature_size,16),BlobsToFeatureMaps(blob_feature_size,16),
+                               BlobsToFeatureMaps(blob_feature_size,16),BlobsToFeatureMaps(blob_feature_size,16),
                                ]).to(device)
-blobs_to_maps.load_state_dict(torch.load(os.path.join(blobs_lstm_dir,'blobs_to_maps.pth')))
-blobs_to_maps.to(device)
-
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ models to train ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-PARAMS_IN_BLOB = 5
-Num_BLOBS = 2
-blob_gen_lstm = lstm(PARAMS_IN_BLOB*Num_BLOBS + params['num_gestures'] + params['prior_size'],PARAMS_IN_BLOB*Num_BLOBS,256,2,params['batch_size'],device).to(device)
-blob_prior_lstm = gaussian_lstm(PARAMS_IN_BLOB*Num_BLOBS,params['prior_size'],256,2,params['batch_size'],device).to(device)
 
 mse = nn.MSELoss(reduce=False)
 
-pre_trained_models = [
+models = [
     frame_encoder,
     frame_decoder,    
     generation_lstm,
-    blobs_to_maps 
-]
-for pre_trained_model in pre_trained_models:
-   pre_trained_model.eval()
-
-models = [
-    blob_gen_lstm,
-    blob_prior_lstm
+    blobs_to_maps   
 ]
 
 parameters = sum([list(model.parameters()) for model in models],[])
@@ -151,10 +127,10 @@ optimizer = optim.Adam(parameters, lr=params['lr'])
 for epoch in range(params['num_epochs']):
 
   # run train and validation loops
-  train_loss, train_ssim_per_future_frame = train(models, pre_trained_models, position_to_blobs, dataloader_train, optimizer, params, config, device)
+  train_loss, train_ssim_per_future_frame = train(models, position_to_blobs, dataloader_train, optimizer, params, config, device)
 
   with torch.no_grad():
-    valid_loss, valid_ssim_per_future_frame, mover_batch_seq_ind, non_mover_batch_seq_ind, best_batch_seq, worst_batch_seq = validate(models, pre_trained_models, position_to_blobs, dataloader_valid, params, config, device)    
+    valid_loss, valid_ssim_per_future_frame, mover_batch_seq_ind, non_mover_batch_seq_ind, best_batch_seq, worst_batch_seq = validate(models, position_to_blobs, dataloader_valid, params, config, device)    
 
   # save model weights  
   torch.save(frame_encoder.state_dict(),os.path.join(models_dir,'frame_encoder.pth'))

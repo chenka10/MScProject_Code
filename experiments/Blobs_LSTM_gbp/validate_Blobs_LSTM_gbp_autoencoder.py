@@ -1,4 +1,6 @@
 import sys
+
+from Code.experiments.Blobs_LSTM_gbp.blob_maps_generation import generate_blob_maps
 sys.path.append('/home/chen/MScProject/Code/')
 sys.path.append('/home/chen/MScProject/Code/Jigsaws/')
 sys.path.append('/home/chen/MScProject/Code/models/')
@@ -27,7 +29,7 @@ mse = nn.MSELoss(reduce=False)
 import lpips
 loss_fn_vgg = lpips.LPIPS(net='vgg')
 
-def validate(models, position_to_blobs, dataloader_valid, params, config, device):
+def validate(models, pre_trained_models, position_to_blobs, dataloader_valid, params, config, device):
   worst_batch_mse = 0.0
   best_batch_mse = 9999999.0
 
@@ -37,7 +39,8 @@ def validate(models, position_to_blobs, dataloader_valid, params, config, device
 
   loss_fn_vgg.to(device)
 
-  frame_encoder, frame_decoder, generation_lstm, blobs_to_maps = models
+  frame_encoder, frame_decoder, generation_lstm, blobs_to_maps = pre_trained_models
+  blob_gen_lstm, blob_prior_lstm = models
 
   # storages for training metrics
   loss = torch.tensor([0.0,0.0,0.0,0.0])
@@ -54,9 +57,14 @@ def validate(models, position_to_blobs, dataloader_valid, params, config, device
     # prepare lstms for batch      
     generation_lstm.batch_size = batch_size
     generation_lstm.hidden = generation_lstm.init_hidden()
+    blob_gen_lstm.batch_size = batch_size
+    blob_gen_lstm.hidden = blob_gen_lstm.init_hidden()
+    blob_prior_lstm.batch_size = batch_size
+    blob_prior_lstm.hidden = blob_prior_lstm.init_hidden()
 
     # encode all frames (past and future)
     seq = [frame_encoder(frames[:,i,:,:,:]) for i in range(params['past_count'])]
+    blobs_seq = [torch.concat(position_to_blobs(kinematics[:,i,:]),dim=-1) for i in range(params['seq_len'])] 
 
     # storage for genrated frames
     generated_seq = []
@@ -75,23 +83,18 @@ def validate(models, position_to_blobs, dataloader_valid, params, config, device
 
     for t in range(1,params['seq_len']):
 
-      blob_datas = position_to_blobs(kinematics[:,t,:])
-      feature_maps = []
-      grayscale_maps = []
+      if t <= params['past_count']:
+        blobs_t_minus_one = blobs_seq[t-1]
+      else:
+        blobs_t_minus_one = blobs_t # setting the current t_minus_1 to be the previous t
 
-      num_blobs = 4
-
-      for i in range(len(blobs_to_maps)):
-        f,g = blobs_to_maps[i](blob_datas[i%num_blobs])
-        feature_maps.append(f)
-        grayscale_maps.append(g)
-      
-      combined_blobs_feature_maps = []
-      for i in range(len(blobs_to_maps)//num_blobs):
-        combined_blobs_feature_maps.append(combine_blob_maps(torch.zeros_like(feature_maps[i*num_blobs]),
-                                                        [feature_maps[i*num_blobs],feature_maps[i*num_blobs+1],feature_maps[i*num_blobs+2],feature_maps[i*num_blobs+3]],
-                                                        [grayscale_maps[i*num_blobs],grayscale_maps[i*num_blobs+1],grayscale_maps[i*num_blobs+2],grayscale_maps[i*num_blobs+3]]))
-
+      z,mu,logvar = blob_prior_lstm(blobs_t_minus_one)
+      blobs_diff = blob_gen_lstm(torch.cat([blobs_t_minus_one,z,gestures_onehot[:,t,:]],dim=-1)).float()
+      blobs_t = blobs_t_minus_one + blobs_diff
+      combined_blobs_feature_maps = generate_blob_maps(blobs_to_maps, [blobs_t[:,:5],
+                                                        blobs_t[:,5:10],
+                                                        blobs_t[:,10:15],
+                                                        blobs_t[:,15:]])
 
       # keep loading past frames (for conditioning), once conditioning is over, load previously encoded frames
       if t <= params['past_count']:          
@@ -115,6 +118,7 @@ def validate(models, position_to_blobs, dataloader_valid, params, config, device
       loss_MSE_per_batch += mse_per_batch.cpu()
       loss_MSE += (distance_weight*mse_per_batch).mean()
       loss_PER += (distance_weight*loss_fn_vgg((decoded_frames*2)-1, (frames[:,t,:,:,:]*2)-1).sum(-1).sum(-1).sum(-1)).mean()      
+      loss_KLD += kl_criterion_normal(mu,logvar) 
 
       # for all predicted future frames compute SSIM with real future frames
       if t>=params['past_count']:

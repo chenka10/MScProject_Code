@@ -45,10 +45,10 @@ else:
    raise ValueError()
 
 
-runid = 'hetgk0hp'
+runid = 'a3di9j14'
 taskId = 2
 subject = 'C'
-repetition = 5
+repetition = 1
 
 past_count = params['past_count']
 future_count = params['future_count']

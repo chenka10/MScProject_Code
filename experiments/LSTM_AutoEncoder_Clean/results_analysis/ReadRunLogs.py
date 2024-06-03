@@ -25,7 +25,7 @@ def get_ssim_results_from_wandb(runid):
 
     return last_epoch_ssim_train, last_epoch_ssim_valid, training_last_ssim, valid_last_ssim, num_epochs
 
-runids = ["ij14m0l3","398qrj4w","x6yl07hm", "i9nuriio","bq2onwcn","hetgk0hp", "d4im5xx1"]
+runids = ["ij14m0l3","398qrj4w","x6yl07hm", "i9nuriio","bq2onwcn","hetgk0hp", "d4im5xx1","a3di9j14"]
 
 
 fig = plt.figure(figsize=(13,5))

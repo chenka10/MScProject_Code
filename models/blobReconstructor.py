@@ -112,12 +112,13 @@ class KinematicsEncoder(nn.Module):
         return self.enc(positions)  
 
 class BlobConfig:
-    def __init__(self, start_x, start_y, start_s, a_range, side):
+    def __init__(self, start_x, start_y, start_s, a_range, start_theta, side):
         self.start_x = start_x
         self.start_y = start_y
         self.start_s = start_s
         self.a_range = a_range
         self.side = side
+        self.start_theta = start_theta
 
 class PositionToBlobs(nn.Module):
     def __init__(self, blob_configs):
@@ -191,7 +192,10 @@ class KinematicsToBlobs(nn.Module):
     def forward(self, kinematics, include_grippers=True):
 
         blobs_data = []
-        device = kinematics.device        
+        device = kinematics.device     
+
+        if len(self.blob_configs)==2:
+            include_grippers = False
 
         for i,blob_config in enumerate(self.blob_configs):
 
@@ -208,7 +212,7 @@ class KinematicsToBlobs(nn.Module):
             blob_data[:,:2] = torch.sigmoid(blob_data[:,:2]) + torch.tensor([blob_config.start_y,blob_config.start_x]).to(device)
             blob_data[:,2] += blob_config.start_s
             blob_data[:,3] = blob_config.a_range[0] +torch.sigmoid(blob_data[:,3])*(blob_config.a_range[1]-blob_config.a_range[0])
-            blob_data[:,4] = torch.sigmoid(blob_data[:,4])*torch.pi                 
+            blob_data[:,4] = torch.sigmoid(blob_data[:,4])*torch.pi  + blob_config.start_theta                
 
             blobs_data.append(blob_data) 
 
@@ -233,7 +237,7 @@ class KinematicsToBlobs(nn.Module):
                                                     -blobs_data[i-2][:,4])
                 gripper_data[:,2] += blob_config.start_s
                 gripper_data[:,3] = blob_config.a_range[0] +torch.sigmoid(gripper_data[:,3])*(blob_config.a_range[1]-blob_config.a_range[0])
-                gripper_data[:,4] = factor*torch.sigmoid(gripper_data[:,4])*torch.pi 
+                gripper_data[:,4] = factor*torch.sigmoid(gripper_data[:,4])*torch.pi + blob_config.start_theta
 
                 blobs_data.append(gripper_data)
 
@@ -245,13 +249,18 @@ class BlobsToFeatureMaps(nn.Module):
         self.blobs_f = nn.Parameter(torch.randn(blob_f_size))
         self.blobs_f.requires_grad = True
         self.target_image_size = target_image_size
+        # self.blob_f_transform = nn.Sequential(
+        #     nn.Linear(blob_f_size,64),
+        #     nn.LeakyReLU(),
+        #     nn.Linear(64,64),
+        #     nn.LeakyReLU(),
+        #     nn.Linear(64,blob_f_size),
+        #     nn.Sigmoid()
+        # )
         self.blob_f_transform = nn.Sequential(
-            nn.Linear(blob_f_size,64),
-            nn.LeakyReLU(),
-            nn.Linear(64,64),
-            nn.LeakyReLU(),
-            nn.Linear(64,blob_f_size),
-            nn.Sigmoid()
+            vgg_layer(blob_f_size,64),            
+            vgg_layer(64,64),            
+            vgg_layer(64,blob_f_size)            
         )
         
 
@@ -259,7 +268,8 @@ class BlobsToFeatureMaps(nn.Module):
         size = self.target_image_size            
         curr_blob_data = blob_data.clone()            
         blobs_grayscale_map = splat_coord(curr_blob_data,size)
-        blobs_feature_map = blobs_grayscale_map*self.blob_f_transform(self.blobs_f)[None,:,None,None]
+        # blobs_feature_map = blobs_grayscale_map*self.blob_f_transform(self.blobs_f)[None,:,None,None]
+        blobs_feature_map = self.blob_f_transform(blobs_grayscale_map*self.blobs_f[None,:,None,None])
 
         return blobs_feature_map, blobs_grayscale_map
 

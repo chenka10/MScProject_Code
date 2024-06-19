@@ -68,7 +68,7 @@ def get_dataloaders(params, config):
     #     params['valid_repetitions'] = df_valid['Repetition'].unique()
 
 
-    return dataloader_train, dataloader_valid, params
+    return dataloader_train, dataloader_valid
 
 
 def unpack_batch(params, config, batch, device):

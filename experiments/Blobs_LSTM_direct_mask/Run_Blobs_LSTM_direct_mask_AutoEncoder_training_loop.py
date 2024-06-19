@@ -11,7 +11,7 @@ from visualizations import visualize_frame_diff
 from models.blobReconstructor import BlobConfig, KinematicsToBlobs, PositionToBlobs, BlobsToFeatureMaps
 
 import torch.optim as optim
-from models.vgg import Encoder, MultiSkipsDecoder
+from models.vgg import Decoder, Encoder, MultiSkipsDecoder
 from models.lstm import lstm
 from models.blob_position_encoder import PositionEncoder
 import os
@@ -19,11 +19,9 @@ from utils import get_distance
 from datetime import datetime
 import torch
 import torch.nn as nn
-from experiments.Blobs_LSTM.train_Blobs_LSTM_autoencoder import train
-from experiments.Blobs_LSTM.validate_Blobs_LSTM_autoencoder import validate
-from experiments.Blobs_LSTM.Blobs_LSTM_DataSetup import get_dataloaders
-import random
-import numpy as np
+from experiments.Blobs_LSTM_direct_mask.train_Blobs_LSTM_direct_mask_autoencoder import train
+from experiments.Blobs_LSTM_direct_mask.validate_Blobs_LSTM_direct_mask_autoencoder import validate
+from experiments.Blobs_LSTM_direct_mask.Blobs_LSTM_direct_mask_DataSetup import get_dataloaders
 
 
 class DistanceLoss(nn.Module):
@@ -34,15 +32,6 @@ class DistanceLoss(nn.Module):
         return get_distance(input, target).mean()
 
 # 1. Set GPU to use
-seed = 42
-random.seed(seed)
-np.random.seed(seed)
-torch.manual_seed(seed)
-torch.cuda.manual_seed(seed)
-torch.backends.cudnn.deterministic = True
-torch.backends.cudnn.benchmark = False
-print('seed:', seed)
-
 device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 print(device)
 
@@ -62,8 +51,7 @@ params = {
    'beta': 0.001,
    'gamma': 1000, 
    'conditioning':'position',
-   'dataset':'JIGSAWS',
-   'seed':seed
+   'dataset':'JIGSAWS'
 }
 params['seq_len'] = params['past_count'] + params['future_count']
 
@@ -72,11 +60,8 @@ if params['dataset']=='ROSMA' and params['conditioning']!='position':
 
 config = jigsaws_config
 
-# 3. Setup data
-dataloader_train, dataloader_valid, params = get_dataloaders(params,config)
-
-# 4. Set if wandb should be used
-use_wandb = True
+# 3. Set if wandb should be used
+use_wandb = False
 start_epoch = 0
 if use_wandb is True:
   import wandb
@@ -88,23 +73,26 @@ if use_wandb is True:
   )
   runid = wandb.run.id
 else:
-  runid = 3
+  runid = 34
 
+
+# 4. Setup data
+dataloader_train, dataloader_valid = get_dataloaders(params,config)
 
 now = datetime.now()
 timestamp = now.strftime("%Y%m%d_%H%M%S")  # Format: YYYYMMDD_HHMMSS
 
 positions_to_blobs_dir = f'/home/chen/MScProject/Code/experiments/Blobs/2_blobs_seed_42_leave_{params['subject_to_leave']}_models'
-models_dir = f'/home/chen/MScProject/Code/experiments/Blobs_LSTM/models_{params['conditioning']}/2_blobs_models_{timestamp}_leave_{params['subject_to_leave']}_{runid}/'
-images_dir = f'/home/chen/MScProject/Code/experiments/Blobs_LSTM/images_{params['conditioning']}/2_blobs_images_{timestamp}_leave_{params['subject_to_leave']}_{runid}/'
+models_dir = f'/home/chen/MScProject/Code/experiments/Blobs_LSTM_direct_mask/models_{params['conditioning']}/2_blobs_models_{timestamp}_leave_{params['subject_to_leave']}_{runid}/'
+images_dir = f'/home/chen/MScProject/Code/experiments/Blobs_LSTM_direct_mask/images_{params['conditioning']}/2_blobs_images_{timestamp}_leave_{params['subject_to_leave']}_{runid}/'
 os.makedirs(images_dir,exist_ok=True)    
 os.makedirs(models_dir,exist_ok=True)
 
 blob_feature_size = 16
 
 # Initialize model, loss function, and optimizer 
-frame_encoder = Encoder(params['img_compressed_size'],3).to(device)
-frame_decoder = MultiSkipsDecoder(params['img_compressed_size'],blob_feature_size,3).to(device)
+frame_encoder = Encoder(params['img_compressed_size'],5).to(device)
+frame_decoder = Decoder(params['img_compressed_size'],3).to(device)
 generation_lstm = lstm(params['img_compressed_size'],params['img_compressed_size'],256,2,params['batch_size'],device).to(device)
 
 blob_config = [

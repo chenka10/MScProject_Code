@@ -43,7 +43,7 @@ loss_fn_vgg = lpips.LPIPS(net='vgg').to(device)
 params = {
    'frame_size':64,
    'batch_size': 64,
-   'num_epochs':250,
+   'num_epochs':30,
    'img_compressed_size': 256,
    'prior_size': 32,   
    'past_count': 10,
@@ -61,9 +61,12 @@ future_count = params['future_count']
 transform = transforms.Compose([
     transforms.ToTensor()
 ])
+
+subject_to_leave = 'D'
+
 df = pd.read_csv(os.path.join(config.get_project_dir(),'jigsaws_all_data_detailed.csv'))
-df_train = df[(df['Subject'] != 'C')].reset_index(drop=True)
-df_test = df[(df['Subject'] =='C')].reset_index(drop=True)
+df_train = df[(df['Subject'] != subject_to_leave)].reset_index(drop=True)
+df_test = df[(df['Subject'] == subject_to_leave)].reset_index(drop=True)
 
 jigsaws_sample_rate = 6
 dataset_train = ConcatDataset(JigsawsImageDataset(df_train,config,1,transform,sample_rate=jigsaws_sample_rate),                        
@@ -88,10 +91,10 @@ blobs = [
 model = BlobReconstructor(256,blobs,params['batch_size']).to(device)
 optimizer = optim.Adam(model.parameters(), lr=params['lr'])
 
-models_dir = f'/home/chen/MScProject/Code/experiments/Blobs/2_blobs_seed_{seed}_models'    
+models_dir = f'/home/chen/MScProject/Code/experiments/Blobs/2_blobs_seed_{seed}_leave_{subject_to_leave}_models'    
 os.makedirs(models_dir, exist_ok=True)
 
-images_dir = f'/home/chen/MScProject/Code/experiments/Blobs/2_blobs_seed_{seed}_images'
+images_dir = f'/home/chen/MScProject/Code/experiments/Blobs/2_blobs_seed_{seed}_leave_{subject_to_leave}_images'
 os.makedirs(images_dir, exist_ok=True)
 
 base_frame = torch.randn(dataset_test[0][0][0].size()).to(device)
@@ -140,11 +143,11 @@ for epoch in (range(params['num_epochs'])):
             Loss_test += Loss.item()
 
     valid_loss = Loss_test/len(dataloader_test)
-    # if best_valid_loss > valid_loss:
-    best_valid_loss = valid_loss
-    torch.save(model.state_dict(), os.path.join(models_dir,f"model_{epoch}.pth"))
-    torch.save(model.positions_to_blobs.state_dict(),os.path.join(models_dir,f"positions_to_blobs_{epoch}.pth"))
-    print('new best model')
+    if best_valid_loss > valid_loss:
+        best_valid_loss = valid_loss
+        torch.save(model.state_dict(), os.path.join(models_dir,f"model_{epoch}.pth"))
+        torch.save(model.positions_to_blobs.state_dict(),os.path.join(models_dir,f"positions_to_blobs_{epoch}.pth"))
+        print('new best model')
 
 
     print(Loss_train/len(dataloader_train))

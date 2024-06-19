@@ -77,7 +77,7 @@ mse = torch.nn.MSELoss()
 #     side: str
 blobs = [
     BlobConfig(0.25,0,4,[1,5],0,'right'),
-    BlobConfig(-0.25,0,4,[1,5],0,'right')
+    BlobConfig(-0.25,0,4,[1,5],0,'left')
 ]
 
 model = BlobReconstructor(256,blobs,params['batch_size'],include_ecm=True).to(device)

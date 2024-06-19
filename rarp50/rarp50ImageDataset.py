@@ -10,9 +10,9 @@ class rarp50ImageDataset(rarp50DatasetBase):
      super().__init__(data_csv_df,config,frames_to_retrieve)    
 
   def __getitem__(self, index):      
-      video_frame_index, video_index = super().get_frame_index_by_dataset_index(index)
+      video_frame_index, video_index = super().get_videoStartFrame_and_videoIndex_by_dataset_index(index)
       video_name = self.df.at[video_index,'videoName']
-      frame_path = os.path.join(self.config.rarp50_videoFramesDir,video_name,f'{video_frame_index}.jpg')
+      frame_path = os.path.join(self.config.rarp50_videoFramesDir,video_name,f'{str(video_frame_index).zfill(5)}.jpg')
       
       frame = np.array(Image.open(frame_path))
       transform = T.Compose([T.ToTensor()])

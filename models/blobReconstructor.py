@@ -97,9 +97,9 @@ class PositionEncoder(nn.Module):
         return self.enc(positions)  
 
 class KinematicsEncoder(nn.Module):
-    def __init__(self):
+    def __init__(self, input_size = 12):
         super(KinematicsEncoder, self).__init__()
-        self.enc = nn.Sequential(nn.Linear(12,128),
+        self.enc = nn.Sequential(nn.Linear(input_size,128),
                                nn.LeakyReLU(),
                                nn.Linear(128,128),
                                nn.LeakyReLU(),
@@ -180,16 +180,21 @@ def rotate_point(point_x, point_y, pivot_x, pivot_y, theta):
     return torch.stack([final_x, final_y],dim=-1)
 
 class KinematicsToBlobs(nn.Module):
-    def __init__(self, blob_configs):
+    def __init__(self, blob_configs, include_ecm = False):
         super(KinematicsToBlobs, self).__init__()
 
         self.blob_configs = blob_configs        
         self.kinematics_encoders = nn.ModuleList()
+        self.include_ecm = include_ecm
+
+        kinematics_input_size = 12 # 3 - position, 9 - rotation
+        if include_ecm:
+            kinematics_input_size += 12 # add another 12 for the ecm kinematics
 
         for blob_config in blob_configs:
-            self.kinematics_encoders.append(KinematicsEncoder())            
+            self.kinematics_encoders.append(KinematicsEncoder(kinematics_input_size))            
 
-    def forward(self, kinematics, include_grippers=True):
+    def forward(self, kinematics, include_grippers=True, ecm_kinematics = None):
 
         blobs_data = []
         device = kinematics.device     
@@ -206,6 +211,9 @@ class KinematicsToBlobs(nn.Module):
                 curr_pos = kinematics[:,:12]
             else:
                 curr_pos = kinematics[:,12:]
+
+            if self.include_ecm:
+                curr_pos = torch.cat([curr_pos, ecm_kinematics],-1)
                             
             blob_data = self.kinematics_encoders[i](curr_pos)                   
         
@@ -216,30 +224,30 @@ class KinematicsToBlobs(nn.Module):
 
             blobs_data.append(blob_data) 
 
-        if include_grippers:
-            for i in [2,3]:
-                blob_config = self.blob_configs[i]
-                if blob_config.side == 'right':
-                    curr_pos = kinematics[:,:12]
-                else:
-                    curr_pos = kinematics[:,12:]
+        # if include_grippers:
+        #     for i in [2,3]:
+        #         blob_config = self.blob_configs[i]
+        #         if blob_config.side == 'right':
+        #             curr_pos = kinematics[:,:12]
+        #         else:
+        #             curr_pos = kinematics[:,12:]
 
-                gripper_data = self.kinematics_encoders[i](curr_pos)
+        #         gripper_data = self.kinematics_encoders[i](curr_pos)
                 
-                factor = 1
-                if i==2:
-                    factor = -1         
+        #         factor = 1
+        #         if i==2:
+        #             factor = -1         
 
-                gripper_data[:,:2] = rotate_point(blobs_data[i-2][:,0]+factor*(0.125*blobs_data[i-2][:,3] + 0.007*blobs_data[i-2][:,2]),
-                                                    blobs_data[i-2][:,1],
-                                                    blobs_data[i-2][:,0],
-                                                    blobs_data[i-2][:,1],
-                                                    -blobs_data[i-2][:,4])
-                gripper_data[:,2] += blob_config.start_s
-                gripper_data[:,3] = blob_config.a_range[0] +torch.sigmoid(gripper_data[:,3])*(blob_config.a_range[1]-blob_config.a_range[0])
-                gripper_data[:,4] = factor*torch.sigmoid(gripper_data[:,4])*torch.pi + blob_config.start_theta
+        #         gripper_data[:,:2] = rotate_point(blobs_data[i-2][:,0]+factor*(0.125*blobs_data[i-2][:,3] + 0.007*blobs_data[i-2][:,2]),
+        #                                             blobs_data[i-2][:,1],
+        #                                             blobs_data[i-2][:,0],
+        #                                             blobs_data[i-2][:,1],
+        #                                             -blobs_data[i-2][:,4])
+        #         gripper_data[:,2] += blob_config.start_s
+        #         gripper_data[:,3] = blob_config.a_range[0] +torch.sigmoid(gripper_data[:,3])*(blob_config.a_range[1]-blob_config.a_range[0])
+        #         gripper_data[:,4] = factor*torch.sigmoid(gripper_data[:,4])*torch.pi + blob_config.start_theta
 
-                blobs_data.append(gripper_data)
+        #         blobs_data.append(gripper_data)
 
         return blobs_data
     
@@ -286,13 +294,14 @@ def combine_blob_maps(background, feature_maps, grayscale_maps):
 
 
 class BlobReconstructor(nn.Module):
-    def __init__(self, hidden_dim, blob_configs, batch_size = None, activation = 'l_relu'):
+    def __init__(self, hidden_dim, blob_configs, batch_size = None, activation = 'l_relu',include_ecm = False):
         super(BlobReconstructor, self).__init__()
         self.encoder_background = Encoder(hidden_dim, 3, batch_size, activation)        
 
         blob_f_size = 3
 
-        self.positions_to_blobs = KinematicsToBlobs(blob_configs)
+        self.include_ecm = include_ecm        
+        self.positions_to_blobs = KinematicsToBlobs(blob_configs,include_ecm)
         self.blobs_to_maps = nn.ModuleList()
 
         for _ in blob_configs:
@@ -306,9 +315,12 @@ class BlobReconstructor(nn.Module):
 
         self.unet = VGGEncoderDecoder(64,3,batch_size,activation)          
 
-    def forward(self, backgrounds, positions, include_gripper):  
+    def forward(self, backgrounds, positions, include_gripper, ecm_kinematics = None):  
 
-        blobs_data = self.positions_to_blobs(positions,include_gripper)                  
+        if (ecm_kinematics is not None) and (self.include_ecm is False):
+            raise ValueError('ecm_kinematics were given but the BlobReconstructor was set to not include ecm')
+
+        blobs_data = self.positions_to_blobs(positions,include_gripper, ecm_kinematics)                  
         
         blobs_images_visualization = None    
 

@@ -3,10 +3,10 @@ from PIL import Image, ImageFilter
 from tqdm import tqdm
 
 # Source directory
-src_dir = "/media/HDD1/chen/rarp50/frames_from_selected_videos"
+src_dir = "/home/chen/MScProject/data/rarp50"
 
 # Destination directory
-dest_dir = "/home/chen/MScProject/data/RARP50_selected_64"
+dest_dir = "/home/chen/MScProject/data/rarp50_64"
 
 # Function to resize images
 def resize_image(input_path, output_path):
@@ -15,7 +15,7 @@ def resize_image(input_path, output_path):
         # img = img.filter(ImageFilter.GaussianBlur(radius=2))
 
         # Resize image
-        img_resized = img.resize((128, 128), Image.LANCZOS)        
+        img_resized = img.resize((64, 64), Image.LANCZOS)        
         img_resized.save(output_path)       
 
 

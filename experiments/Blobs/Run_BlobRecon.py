@@ -43,7 +43,7 @@ loss_fn_vgg = lpips.LPIPS(net='vgg').to(device)
 params = {
    'frame_size':64,
    'batch_size': 64,
-   'num_epochs':30,
+   'num_epochs':15,
    'img_compressed_size': 256,
    'prior_size': 32,   
    'past_count': 10,
@@ -143,11 +143,12 @@ for epoch in (range(params['num_epochs'])):
             Loss_test += Loss.item()
 
     valid_loss = Loss_test/len(dataloader_test)
-    if best_valid_loss > valid_loss:
-        best_valid_loss = valid_loss
-        torch.save(model.state_dict(), os.path.join(models_dir,f"model_{epoch}.pth"))
-        torch.save(model.positions_to_blobs.state_dict(),os.path.join(models_dir,f"positions_to_blobs_{epoch}.pth"))
+    if best_valid_loss > valid_loss:    
         print('new best model')
+
+    best_valid_loss = valid_loss
+    torch.save(model.state_dict(), os.path.join(models_dir,f"model_{epoch}.pth"))
+    torch.save(model.positions_to_blobs.state_dict(),os.path.join(models_dir,f"positions_to_blobs_{epoch}.pth"))
 
 
     print(Loss_train/len(dataloader_train))
@@ -172,6 +173,11 @@ for epoch in (range(params['num_epochs'])):
 
     plt.subplot(3,2,5)
     plt.imshow(torch_to_numpy(output_low[0].detach().cpu()))               
+
+    plt.subplot(3,2,6)
+    plt.imshow(torch_to_numpy(frames[0].detach().cpu()))
+    plt.imshow(torch_to_numpy(blobs[1][0].detach().cpu()) + torch_to_numpy(blobs[0][0].detach().cpu()), cmap='jet', alpha=0.15)
+
     plt.savefig(os.path.join(images_dir,f'test_{epoch}.png'))
     plt.close()
 

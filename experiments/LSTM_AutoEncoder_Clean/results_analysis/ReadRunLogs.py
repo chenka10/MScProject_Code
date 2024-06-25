@@ -5,8 +5,8 @@ api = wandb.Api()
 runs = api.runs("chenka/Robotic Surgery MSc")
 
 # runids = ["ij14m0l3","398qrj4w","x6yl07hm", "i9nuriio","bq2onwcn","hetgk0hp", "d4im5xx1","a3di9j14"]
-runids = ["hetgk0hp", "a3di9j14","mfeewbl3","awegarzr"]
-run_names = ["hetgk0hp", "a3di9j14","mfeewbl3","awegarzr"]
+runids = ["hetgk0hp", "9zijshao" ,"awegarzr","9zijshao","nqp7xfd3", "wu8rgstq", "bx6bgjnl", "d5zvd6wc", "wmeaw2hw"]
+run_names = ["leave C (SVG)", "leave B", "leave C","leave D","leave E", "leave F", "leave G", "leave H", "leave I"]
 # run_names = ['SVG (w/ position conditioning)', 'Ours']
 
 epochs_to_take = 18

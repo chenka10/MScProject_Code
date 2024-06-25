@@ -48,10 +48,10 @@ print(device)
 
 # 2. Set params
 params = {
-   'subject_to_leave':'C',
+   'subject_to_leave':'I',
    'frame_size':64,
    'batch_size': 20,
-   'num_epochs':100,
+   'num_epochs':20,
    'img_compressed_size': 256,
    'prior_size': 32,
    'subjects_num': 8,
@@ -112,7 +112,7 @@ blob_config = [
     BlobConfig(-0.25,0,4,[2,5],0,'left')
 ]
 position_to_blobs = KinematicsToBlobs(blob_config)
-position_to_blobs.load_state_dict(torch.load(os.path.join(positions_to_blobs_dir,'positions_to_blobs_7.pth')))
+position_to_blobs.load_state_dict(torch.load(os.path.join(positions_to_blobs_dir,'positions_to_blobs_14.pth')))
 position_to_blobs.to(device)
 blobs_to_maps = nn.ModuleList([BlobsToFeatureMaps(blob_feature_size,64),BlobsToFeatureMaps(blob_feature_size,64),                               
                                BlobsToFeatureMaps(blob_feature_size,32),BlobsToFeatureMaps(blob_feature_size,32),                                                              

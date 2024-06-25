@@ -43,7 +43,7 @@ loss_fn_vgg = lpips.LPIPS(net='vgg').to(device)
 
 params = {
    'frame_size':64,
-   'batch_size': 64,
+   'batch_size': 16,
    'num_epochs':300,
    'img_compressed_size': 256,
    'prior_size': 32,      
@@ -165,7 +165,14 @@ for epoch in (range(params['num_epochs'])):
         plt.imshow(torch_to_numpy(blobs[0][0].detach().cpu()+blobs[2][0].detach().cpu()))        
 
     plt.subplot(3,2,5)
-    plt.imshow(torch_to_numpy(output_low[0].detach().cpu()))               
+    plt.imshow(torch_to_numpy(output_low[0].detach().cpu()))    
+
+    plt.subplot(3,2,6)
+    plt.imshow(torch_to_numpy(frames[0].detach().cpu()))
+    plt.imshow(torch_to_numpy(blobs[1][0].detach().cpu()) + torch_to_numpy(blobs[0][0].detach().cpu()), cmap='jet', alpha=0.15)
+
+
+
     plt.savefig(os.path.join(images_dir,f'test_{epoch}.png'))
     plt.close()
 

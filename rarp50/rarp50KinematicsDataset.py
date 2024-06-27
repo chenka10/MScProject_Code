@@ -8,8 +8,8 @@ import torchvision.transforms as T
 import pandas as pd
 
 class rarp50KinematicsDataset(rarp50DatasetBase):
-   def __init__(self,data_csv_df,config,frames_to_retrieve):
-      super().__init__(data_csv_df,config,frames_to_retrieve) 
+   def __init__(self,data_csv_df,config,frames_to_retrieve, frame_increments):
+      super().__init__(data_csv_df,config,frames_to_retrieve, frame_increments) 
       self.storage = {}
 
 

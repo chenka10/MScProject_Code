@@ -42,7 +42,7 @@ print(device)
 loss_fn_vgg = lpips.LPIPS(net='vgg').to(device)
 
 params = {
-   'frame_size':64,
+   'frame_size':128,
    'batch_size': 16,
    'num_epochs':300,
    'img_compressed_size': 256,
@@ -58,14 +58,20 @@ transform = transforms.Compose([
     transforms.ToTensor()
 ])
 
-df = pd.read_csv(os.path.join('/home/chen/MScProject/rarp50_filtered_data_detailed.csv'))
-df = df[(df['videoName']=='video_37')].reset_index(drop=True)
+df = pd.read_csv(os.path.join('/home/chen/MScProject/rarp50_segmentations_data_detailed.csv'))
+df_train = df[~df['videoName'].isin(['video_37','video_38','video_39'])].reset_index(drop=True)
+df_test = df[df['videoName'].isin(['video_37','video_38','video_39'])].reset_index(drop=True)
 
-dataset_train = ConcatDataset(rarp50ImageDataset(df,config,1),rarp50KinematicsDataset(df,config,1))
+DIGITS_IN_SEGMENTATION_FILE_NAME = 9
+FRAME_INCREMENT = 60
+
+config.rarp50_videoFramesDir = os.path.join(config.project_baseDir,f'data/rarp50_segmentations_{params['frame_size']}')    
+
+dataset_train = ConcatDataset(rarp50ImageDataset(df_train,config,1,DIGITS_IN_SEGMENTATION_FILE_NAME,FRAME_INCREMENT),rarp50KinematicsDataset(df_train,config,1,FRAME_INCREMENT))
 dataloader_train = DataLoader(dataset_train,params['batch_size'],True,drop_last=True)
 
-dataset_test = ConcatDataset(rarp50ImageDataset(df,config,1),rarp50KinematicsDataset(df,config,1))
-dataloader_test = DataLoader(dataset_train,params['batch_size'],True,drop_last=True)
+dataset_test = ConcatDataset(rarp50ImageDataset(df_test,config,1,DIGITS_IN_SEGMENTATION_FILE_NAME,FRAME_INCREMENT),rarp50KinematicsDataset(df_test,config,1,FRAME_INCREMENT))
+dataloader_test = DataLoader(dataset_test,params['batch_size'],True,drop_last=True)
 
 mse = torch.nn.MSELoss()
 
@@ -76,20 +82,22 @@ mse = torch.nn.MSELoss()
 #     start_theta: int,
 #     side: str
 blobs = [
-    BlobConfig(0.25,0,4,[1,5],0,'right'),
-    BlobConfig(-0.25,0,4,[1,5],0,'left')
+    BlobConfig(0.25,0,6,[1,10],0,'right'),
+    BlobConfig(-0.25,0,6,[1,10],0,'left')
 ]
 
-model = BlobReconstructor(256,blobs,params['batch_size'],include_ecm=True).to(device)
+image_size = params['frame_size']
+
+model = BlobReconstructor(256,blobs,params['batch_size'],include_ecm=True,im_size=image_size).to(device)
 optimizer = optim.Adam(model.parameters(), lr=params['lr'])
 
-models_dir = f'/home/chen/MScProject/Code/experiments/rarp50/Blobs/2_blobs_seed_{seed}_models'    
+models_dir = f'/home/chen/MScProject/Code/experiments/rarp50/Blobs/2_blobs_frameSize_{params['frame_size']}_seed_{seed}_models'    
 os.makedirs(models_dir, exist_ok=True)
 
-images_dir = f'/home/chen/MScProject/Code/experiments/rarp50/Blobs/2_blobs_seed_{seed}_images'
+images_dir = f'/home/chen/MScProject/Code/experiments/rarp50/Blobs/2_blobs_frameSize_{params['frame_size']}_seed_{seed}_images'
 os.makedirs(images_dir, exist_ok=True)
 
-base_frame = torch.randn(dataset_test[0][0].size()).to(device)
+base_frame = torch.zeros(dataset_test[0][0].size()).to(device)
 
 best_valid_loss = 9999999
 
@@ -98,6 +106,8 @@ for epoch in (range(params['num_epochs'])):
     Loss_train = 0.0
     for batch in tqdm(dataloader_train):
         frames = batch[0].to(device)
+        frames_train = frames
+
         psm1_position, psm1_rotation = batch[1][0].to(device)*100, batch[1][1].to(device)
         psm2_position, psm2_rotation = batch[1][2].to(device)*100, batch[1][3].to(device)
         ecm_position, ecm_rotation = batch[1][4].to(device)*100, batch[1][5].to(device)
@@ -109,6 +119,7 @@ for epoch in (range(params['num_epochs'])):
 
         optimizer.zero_grad()        
         output_high, output_low, blobs = model(base_frame.repeat(batch_size,1,1,1),kinematics,False,ecm_kinematics)
+        blobs_train = blobs
 
         MSE_Loss = mse(output_low, frames)
         PER_Loss = loss_fn_vgg(output_high, frames).mean()
@@ -122,14 +133,18 @@ for epoch in (range(params['num_epochs'])):
     with torch.no_grad():        
         for batch in tqdm(dataloader_test):
             frames = batch[0].to(device)
+            frames_test = frames
+
             psm1_position, psm1_rotation = batch[1][0].to(device)*100, batch[1][1].to(device)
             psm2_position, psm2_rotation = batch[1][2].to(device)*100, batch[1][3].to(device)
             ecm_position, ecm_rotation = batch[1][4].to(device)*100, batch[1][5].to(device)
+
             kinematics = torch.cat([psm1_position, psm1_rotation, psm2_position, psm2_rotation],dim=-1)
             ecm_kinematics = torch.cat([ecm_position, ecm_rotation],dim=-1)
 
             batch_size = frames.size(0)            
             output_high, output_low, blobs = model(base_frame.repeat(batch_size,1,1,1),kinematics,False,ecm_kinematics)
+            blobs_test = blobs
 
             MSE_Loss = mse(output_low, frames)
             PER_Loss = loss_fn_vgg(output_high, frames).mean()
@@ -147,29 +162,21 @@ for epoch in (range(params['num_epochs'])):
     print(Loss_train/len(dataloader_train))
     print(Loss_test/len(dataloader_test))
     print(epoch)
-    plt.figure()
-    plt.subplot(3,2,1)
-    plt.imshow(torch_to_numpy(output_high[0].detach().cpu()))
-    plt.subplot(3,2,2)
-    plt.imshow(torch_to_numpy(frames[0].detach().cpu()))
+    plt.figure()  
 
-    if len(blobs)==2:
-        plt.subplot(3,2,3)
-        plt.imshow(torch_to_numpy(blobs[1][0].detach().cpu()))        
-        plt.subplot(3,2,4)
-        plt.imshow(torch_to_numpy(blobs[0][0].detach().cpu())) 
-    else:
-        plt.subplot(3,2,3)
-        plt.imshow(torch_to_numpy(blobs[1][0].detach().cpu()+blobs[3][0].detach().cpu()))        
-        plt.subplot(3,2,4)
-        plt.imshow(torch_to_numpy(blobs[0][0].detach().cpu()+blobs[2][0].detach().cpu()))        
+    for i in range(3):
+        plt.subplot(3,2,i*2+1)
+        plt.imshow(torch_to_numpy(frames_train[i].detach().cpu()))
+        plt.imshow(torch_to_numpy(blobs_train[1][i].detach().cpu()) + torch_to_numpy(blobs_train[0][i].detach().cpu()), cmap='jet', alpha=0.15)
+        plt.title('train')
+        plt.axis(None)
 
-    plt.subplot(3,2,5)
-    plt.imshow(torch_to_numpy(output_low[0].detach().cpu()))    
-
-    plt.subplot(3,2,6)
-    plt.imshow(torch_to_numpy(frames[0].detach().cpu()))
-    plt.imshow(torch_to_numpy(blobs[1][0].detach().cpu()) + torch_to_numpy(blobs[0][0].detach().cpu()), cmap='jet', alpha=0.15)
+    for i in range(3):
+        plt.subplot(3,2,i*2+2)
+        plt.imshow(torch_to_numpy(frames_test[i].detach().cpu()))
+        plt.imshow(torch_to_numpy(blobs_test[1][i].detach().cpu()) + torch_to_numpy(blobs_test[0][i].detach().cpu()), cmap='jet', alpha=0.15)
+        plt.title('test')
+        plt.axis(None)
 
 
 

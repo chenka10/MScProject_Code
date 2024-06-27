@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from Code.models.vgg_gen import get_vgg_enc_dec
 from vgg import vgg_layer, Encoder, VGGEncoderDecoder
 from splatCoords import splat_coord
 
@@ -294,7 +295,7 @@ def combine_blob_maps(background, feature_maps, grayscale_maps):
 
 
 class BlobReconstructor(nn.Module):
-    def __init__(self, hidden_dim, blob_configs, batch_size = None, activation = 'l_relu',include_ecm = False):
+    def __init__(self, hidden_dim, blob_configs, batch_size = None, activation = 'l_relu',include_ecm = False, im_size = 64):
         super(BlobReconstructor, self).__init__()
         self.encoder_background = Encoder(hidden_dim, 3, batch_size, activation)        
 
@@ -305,15 +306,19 @@ class BlobReconstructor(nn.Module):
         self.blobs_to_maps = nn.ModuleList()
 
         for _ in blob_configs:
-            self.blobs_to_maps.append(BlobsToFeatureMaps(blob_f_size,64))
+            self.blobs_to_maps.append(BlobsToFeatureMaps(blob_f_size,im_size))
         
         self.blob_configs = blob_configs
-        self.num_blobs = len(blob_configs)        
+        self.num_blobs = len(blob_configs)  
+        self.im_size = im_size      
 
-        self.blobs_f = nn.Parameter(torch.randn(self.num_blobs,blob_f_size))        
-        self.decoder = VGGEncoderDecoder(hidden_dim,3,batch_size,activation)
+        self.blobs_f = nn.Parameter(torch.randn(self.num_blobs,blob_f_size))  
 
-        self.unet = VGGEncoderDecoder(64,3,batch_size,activation)          
+        self.decoder = get_vgg_enc_dec(im_size, hidden_dim,3,batch_size,activation)
+        self.unet = get_vgg_enc_dec(im_size, 64,3,batch_size,activation)
+
+        # self.decoder = VGGEncoderDecoder(hidden_dim,3,batch_size,activation)
+        # self.unet = VGGEncoderDecoder(64,3,batch_size,activation)          
 
     def forward(self, backgrounds, positions, include_gripper, ecm_kinematics = None):  
 
@@ -335,7 +340,10 @@ class BlobReconstructor(nn.Module):
         if blobs_images_visualization is None:
             blobs_images_visualization = [bo.detach().cpu() for bo in blobs_grayscale_maps]
         
-        output_low = self.decoder(backgrounds)    
+        # output_low = self.decoder(backgrounds)    
+        
+        output_low = backgrounds # this is for rarp50 trial!
+
         output_low = combine_blob_maps(output_low, blobs_feature_maps, blobs_grayscale_maps)    
 
         # for i,blob_img in enumerate(blobs_feature_maps):

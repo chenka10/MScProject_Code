@@ -2,7 +2,7 @@ from pytorch_msssim import ssim
 from tqdm import tqdm
 from Code.experiments.rarp50.Blobs_LSTM.rarp50_Blobs_LSTM_DataSetup import unpack_batch_rarp50
 from utils import get_distance
-from models.blobReconstructor import combine_blob_maps
+from models.blobReconstructor import KinematicsToBlobs, combine_blob_maps
 import torch
 import torch.nn as nn
 
@@ -11,7 +11,7 @@ loss_fn_vgg = lpips.LPIPS(net='vgg')
 
 mse = nn.MSELoss(reduce=False)
 
-def train(models, position_to_blobs, dataloader_train, optimizer, params, config, device):
+def train(models, position_to_blobs: KinematicsToBlobs, dataloader_train, optimizer, params, config, device):
 
   loss_fn_vgg.to(device)
 
@@ -52,7 +52,7 @@ def train(models, position_to_blobs, dataloader_train, optimizer, params, config
     
     for t in range(1,params['seq_len']):
 
-      blob_datas = position_to_blobs(kinematics[:,t,:])
+      blob_datas = position_to_blobs(kinematics[:,t,:],ecm_kinematics=ecm_kinematics[:,t,:])
       feature_maps = []
       grayscale_maps = []
 

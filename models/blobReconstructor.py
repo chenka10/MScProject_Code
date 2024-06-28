@@ -181,12 +181,13 @@ def rotate_point(point_x, point_y, pivot_x, pivot_y, theta):
     return torch.stack([final_x, final_y],dim=-1)
 
 class KinematicsToBlobs(nn.Module):
-    def __init__(self, blob_configs, include_ecm = False):
+    def __init__(self, blob_configs, include_ecm = False, expand_blobs_window = False):
         super(KinematicsToBlobs, self).__init__()
 
         self.blob_configs = blob_configs        
         self.kinematics_encoders = nn.ModuleList()
         self.include_ecm = include_ecm
+        self.expand_blobs_window = expand_blobs_window
 
         kinematics_input_size = 12 # 3 - position, 9 - rotation
         if include_ecm:
@@ -218,7 +219,10 @@ class KinematicsToBlobs(nn.Module):
                             
             blob_data = self.kinematics_encoders[i](curr_pos)                   
         
-            blob_data[:,:2] = torch.sigmoid(blob_data[:,:2]) + torch.tensor([blob_config.start_y,blob_config.start_x]).to(device)
+            if self.expand_blobs_window:
+                blob_data[:,:2] = 10*((torch.sigmoid(blob_data[:,:2])-0.5)) + torch.tensor([blob_config.start_y,blob_config.start_x]).to(device)
+            else:
+                blob_data[:,:2] = torch.sigmoid(blob_data[:,:2]) + torch.tensor([blob_config.start_y,blob_config.start_x]).to(device)
             blob_data[:,2] += blob_config.start_s
             blob_data[:,3] = blob_config.a_range[0] +torch.sigmoid(blob_data[:,3])*(blob_config.a_range[1]-blob_config.a_range[0])
             blob_data[:,4] = torch.sigmoid(blob_data[:,4])*torch.pi  + blob_config.start_theta                
@@ -295,14 +299,14 @@ def combine_blob_maps(background, feature_maps, grayscale_maps):
 
 
 class BlobReconstructor(nn.Module):
-    def __init__(self, hidden_dim, blob_configs, batch_size = None, activation = 'l_relu',include_ecm = False, im_size = 64):
+    def __init__(self, hidden_dim, blob_configs, batch_size = None, activation = 'l_relu',include_ecm = False, im_size = 64, expand_blobs_window = False):
         super(BlobReconstructor, self).__init__()
         self.encoder_background = Encoder(hidden_dim, 3, batch_size, activation)        
 
         blob_f_size = 3
 
         self.include_ecm = include_ecm        
-        self.positions_to_blobs = KinematicsToBlobs(blob_configs,include_ecm)
+        self.positions_to_blobs = KinematicsToBlobs(blob_configs,include_ecm,expand_blobs_window=expand_blobs_window)
         self.blobs_to_maps = nn.ModuleList()
 
         for _ in blob_configs:

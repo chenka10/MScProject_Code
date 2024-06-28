@@ -8,7 +8,7 @@ wandb.login(key = '33514858884adc0292c3f8be3706845a1db35d3a')
 
 from pytorch_msssim import ssim
 from tqdm import tqdm
-from models.blobReconstructor import combine_blob_maps
+from models.blobReconstructor import KinematicsToBlobs, combine_blob_maps
 from Code.experiments.rarp50.Blobs_LSTM.rarp50_Blobs_LSTM_DataSetup import unpack_batch_rarp50
 
 from utils import get_distance
@@ -22,7 +22,7 @@ mse = nn.MSELoss(reduce=False)
 import lpips
 loss_fn_vgg = lpips.LPIPS(net='vgg')
 
-def validate(models, position_to_blobs, dataloader_valid, params, config, device):
+def validate(models, position_to_blobs: KinematicsToBlobs, dataloader_valid, params, config, device):
   worst_batch_mse = 0.0
   best_batch_mse = 9999999.0
 
@@ -39,7 +39,9 @@ def validate(models, position_to_blobs, dataloader_valid, params, config, device
   ssim_per_future_frame = torch.zeros((params['future_count']))
   for batch in tqdm(dataloader_valid):        
 
-    frames, kinematics,ecm_kinematics, positions, batch_size = unpack_batch_rarp50(batch, device)      
+    frames, kinematics,ecm_kinematics, positions, batch_size = unpack_batch_rarp50(batch, device)   
+    seq_len = frames.size(1)
+    gestures = torch.ones([batch_size,seq_len])   # this is a mock for gestures...
 
     # set models to eval
     for model in models:
@@ -71,7 +73,7 @@ def validate(models, position_to_blobs, dataloader_valid, params, config, device
 
     for t in range(1,params['seq_len']):
 
-      blob_datas = position_to_blobs(kinematics[:,t,:])
+      blob_datas = position_to_blobs(kinematics[:,t,:],ecm_kinematics=ecm_kinematics[:,t,:])
       feature_maps = []
       grayscale_maps = []
 
@@ -137,7 +139,7 @@ def validate(models, position_to_blobs, dataloader_valid, params, config, device
       best_batch_seq_ind = ([frames.detach().cpu(), gestures.detach().cpu()],generated_seq,generated_grayscale_maps,best_mse_batch_index)
 
     loss_tot = loss_MSE + loss_KLD
-    loss += torch.tensor([loss_tot.item(),loss_MSE.item(),loss_PER.item(),loss_KLD.item()])  
+    loss += torch.tensor([loss_tot.item(),loss_MSE.item(),loss_PER.item(),loss_KLD.item()])      
 
   loss /= len(dataloader_valid)
   ssim_per_future_frame /= len(dataloader_valid)

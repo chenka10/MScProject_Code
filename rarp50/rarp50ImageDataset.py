@@ -1,4 +1,5 @@
 import os
+import torch
 from torch.utils.data import Dataset
 import numpy as np
 from Code.rarp50.rarp50DatasetBase import rarp50DatasetBase
@@ -24,19 +25,25 @@ class rarp50ImageDataset(rarp50DatasetBase):
       video_frame_index, video_index = super().get_videoStartFrame_and_videoIndex_by_dataset_index(index)
       video_name = self.df.at[video_index,'videoName']
 
-      frame_path = os.path.join(self.config.rarp50_videoFramesDir,video_name,f'{str(video_frame_index).zfill(self.digits_in_name)}.jpg')
+      frames = torch.tensor([])
+      for frame_i in range(self.frames_to_retrieve):
 
-      if os.path.exists(frame_path) is False:
-         frame_path = os.path.join(self.config.rarp50_videoFramesDir,video_name,f'{str(video_frame_index).zfill(self.digits_in_name)}.png')         
-      
-      frame = np.array(Image.open(frame_path))
+         frame_path = os.path.join(self.config.rarp50_videoFramesDir,video_name,f'{str(video_frame_index).zfill(self.digits_in_name)}.jpg')
 
-      if self.is_segmentations:
-         for i in range(frame.max()+1):
-            frame[frame==i] = rarp50_segmentation_map[i]
+         if os.path.exists(frame_path) is False:
+            frame_path = os.path.join(self.config.rarp50_videoFramesDir,video_name,f'{str(video_frame_index).zfill(self.digits_in_name)}.png')         
+         
+         frame = np.array(Image.open(frame_path))
 
-      transform = T.Compose([T.ToTensor()])
-      frame = transform(frame)
+         if self.is_segmentations:
+            for i in range(frame.max()+1):
+               frame[frame==i] = rarp50_segmentation_map[i]
 
-      return frame
+         transform = T.Compose([T.ToTensor()])
+         frame = transform(frame)
+         frames = torch.cat((frames, frame.unsqueeze(0)), dim=0)
+
+         video_frame_index += self.frame_increments
+
+      return frames
       

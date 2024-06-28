@@ -55,9 +55,9 @@ device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 print(device)
 
 # 2. Set params
-params = {   
-   'frame_size':128,
-   'batch_size': 20,
+params = {      
+   'frame_size':64,
+   'batch_size': 22,
    'num_epochs':20,
    'img_compressed_size': 256,
    'prior_size': 32,
@@ -80,7 +80,7 @@ if params['dataset']=='ROSMA' and params['conditioning']!='position':
 
 # 3. Setup data
 df = pd.read_csv(os.path.join('/home/chen/MScProject/rarp50_filtered_data_detailed.csv'))
-df_train = df[df['videoName'].isin(['video_37'])].reset_index(drop=True)
+df_train = df[~df['videoName'].isin(['video_37'])].reset_index(drop=True)
 df_test = df[df['videoName'].isin(['video_37'])].reset_index(drop=True)
 
 DIGITS_IN_SEGMENTATION_FILE_NAME = 5
@@ -114,7 +114,7 @@ else:
 now = datetime.now()
 timestamp = now.strftime("%Y%m%d_%H%M%S")  # Format: YYYYMMDD_HHMMSS
 
-positions_to_blobs_dir = f'/home/chen/MScProject/Code/experiments/rarp50/Blobs/2_blobs_frameSize_{params['frame_size']}_seed_42_models'
+positions_to_blobs_dir = f'/home/chen/MScProject/Code/experiments/rarp50/Blobs/2_blobs_extendedBlobWindow_frameSize_128_seed_42_models'
 models_dir = f'/home/chen/MScProject/Code/experiments/rarp50/Blobs_LSTM/models_{params['conditioning']}/2_blobs_models_{timestamp}_{runid}/'
 images_dir = f'/home/chen/MScProject/Code/experiments/rarp50/Blobs_LSTM/images_{params['conditioning']}/2_blobs_images_{timestamp}_{runid}/'
 os.makedirs(images_dir,exist_ok=True)    
@@ -123,8 +123,15 @@ os.makedirs(models_dir,exist_ok=True)
 blob_feature_size = 16
 
 # Initialize model, loss function, and optimizer 
-frame_encoder = Encoder128(params['img_compressed_size'],3).to(device)
-frame_decoder = MultiSkipsDecoder128(params['img_compressed_size'],blob_feature_size,nc = 3).to(device)
+if params['frame_size'] == 64:
+  frame_encoder = Encoder(params['img_compressed_size'],3).to(device)
+  frame_decoder = MultiSkipsDecoder(params['img_compressed_size'],blob_feature_size,nc = 3).to(device)
+elif params['frame_size']==128:
+  frame_encoder = Encoder128(params['img_compressed_size'],3).to(device)
+  frame_decoder = MultiSkipsDecoder128(params['img_compressed_size'],blob_feature_size,nc = 3).to(device)
+else:
+   raise ValueError('params["frame_size"] must be either 64 or 128')
+
 generation_lstm = lstm(params['img_compressed_size'],params['img_compressed_size'],256,2,params['batch_size'],device).to(device)
 
 # start_x: float,
@@ -138,8 +145,10 @@ blob_config = [
     BlobConfig(-0.25,0,6,[1,10],0,'left')
 ]
 
+
+POSITION_TO_BLOBS_MODEL_EPOCH = 14
 position_to_blobs = KinematicsToBlobs(blob_config,True)
-position_to_blobs.load_state_dict(torch.load(os.path.join(positions_to_blobs_dir,'positions_to_blobs_32.pth')))
+position_to_blobs.load_state_dict(torch.load(os.path.join(positions_to_blobs_dir,f'positions_to_blobs_{POSITION_TO_BLOBS_MODEL_EPOCH}.pth')))
 position_to_blobs.to(device)
 img_size = params['frame_size']
 blobs_to_maps = nn.ModuleList([BlobsToFeatureMaps(blob_feature_size,img_size),BlobsToFeatureMaps(blob_feature_size,img_size),                               

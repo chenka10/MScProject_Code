@@ -67,10 +67,10 @@ FRAME_INCREMENT = 60
 
 config.rarp50_videoFramesDir = os.path.join(config.project_baseDir,f'data/rarp50_segmentations_{params['frame_size']}')    
 
-dataset_train = ConcatDataset(rarp50ImageDataset(df_train,config,1,DIGITS_IN_SEGMENTATION_FILE_NAME,FRAME_INCREMENT),rarp50KinematicsDataset(df_train,config,1,FRAME_INCREMENT))
+dataset_train = ConcatDataset(rarp50ImageDataset(df_train,config,1,DIGITS_IN_SEGMENTATION_FILE_NAME,FRAME_INCREMENT,is_segmentations=True),rarp50KinematicsDataset(df_train,config,1,FRAME_INCREMENT))
 dataloader_train = DataLoader(dataset_train,params['batch_size'],True,drop_last=True)
 
-dataset_test = ConcatDataset(rarp50ImageDataset(df_test,config,1,DIGITS_IN_SEGMENTATION_FILE_NAME,FRAME_INCREMENT),rarp50KinematicsDataset(df_test,config,1,FRAME_INCREMENT))
+dataset_test = ConcatDataset(rarp50ImageDataset(df_test,config,1,DIGITS_IN_SEGMENTATION_FILE_NAME,FRAME_INCREMENT,is_segmentations=True),rarp50KinematicsDataset(df_test,config,1,FRAME_INCREMENT))
 dataloader_test = DataLoader(dataset_test,params['batch_size'],True,drop_last=True)
 
 mse = torch.nn.MSELoss()
@@ -88,13 +88,13 @@ blobs = [
 
 image_size = params['frame_size']
 
-model = BlobReconstructor(256,blobs,params['batch_size'],include_ecm=True,im_size=image_size).to(device)
+model = BlobReconstructor(256,blobs,params['batch_size'],include_ecm=True,im_size=image_size,expand_blobs_window=True).to(device)
 optimizer = optim.Adam(model.parameters(), lr=params['lr'])
 
-models_dir = f'/home/chen/MScProject/Code/experiments/rarp50/Blobs/2_blobs_frameSize_{params['frame_size']}_seed_{seed}_models'    
+models_dir = f'/home/chen/MScProject/Code/experiments/rarp50/Blobs/2_blobs_extendedBlobWindow_frameSize_{params['frame_size']}_seed_{seed}_models'    
 os.makedirs(models_dir, exist_ok=True)
 
-images_dir = f'/home/chen/MScProject/Code/experiments/rarp50/Blobs/2_blobs_frameSize_{params['frame_size']}_seed_{seed}_images'
+images_dir = f'/home/chen/MScProject/Code/experiments/rarp50/Blobs/2_blobs_extendedBlobWindow_frameSize_{params['frame_size']}_seed_{seed}_images'
 os.makedirs(images_dir, exist_ok=True)
 
 base_frame = torch.zeros(dataset_test[0][0].size()).to(device)
@@ -105,12 +105,13 @@ for epoch in (range(params['num_epochs'])):
     model.eval() # disable batch-norm
     Loss_train = 0.0
     for batch in tqdm(dataloader_train):
-        frames = batch[0].to(device)
+        frames = batch[0].squeeze(1).to(device)
         frames_train = frames
 
-        psm1_position, psm1_rotation = batch[1][0].to(device)*100, batch[1][1].to(device)
-        psm2_position, psm2_rotation = batch[1][2].to(device)*100, batch[1][3].to(device)
-        ecm_position, ecm_rotation = batch[1][4].to(device)*100, batch[1][5].to(device)
+        psm1_position, psm1_rotation = batch[1][0].squeeze(1).to(device)*100, batch[1][1].squeeze(1).to(device)
+        psm2_position, psm2_rotation = batch[1][2].squeeze(1).to(device)*100, batch[1][3].squeeze(1).to(device)
+        ecm_position, ecm_rotation = batch[1][4].squeeze(1).to(device)*100, batch[1][5].squeeze(1).to(device)
+
         
         kinematics = torch.cat([psm1_position, psm1_rotation, psm2_position, psm2_rotation],dim=-1)
         ecm_kinematics = torch.cat([ecm_position, ecm_rotation],dim=-1)
@@ -132,12 +133,12 @@ for epoch in (range(params['num_epochs'])):
     model.eval()
     with torch.no_grad():        
         for batch in tqdm(dataloader_test):
-            frames = batch[0].to(device)
+            frames = batch[0].squeeze(1).to(device)
             frames_test = frames
 
-            psm1_position, psm1_rotation = batch[1][0].to(device)*100, batch[1][1].to(device)
-            psm2_position, psm2_rotation = batch[1][2].to(device)*100, batch[1][3].to(device)
-            ecm_position, ecm_rotation = batch[1][4].to(device)*100, batch[1][5].to(device)
+            psm1_position, psm1_rotation = batch[1][0].squeeze(1).to(device)*100, batch[1][1].squeeze(1).to(device)
+            psm2_position, psm2_rotation = batch[1][2].squeeze(1).to(device)*100, batch[1][3].squeeze(1).to(device)
+            ecm_position, ecm_rotation = batch[1][4].squeeze(1).to(device)*100, batch[1][5].squeeze(1).to(device)
 
             kinematics = torch.cat([psm1_position, psm1_rotation, psm2_position, psm2_rotation],dim=-1)
             ecm_kinematics = torch.cat([ecm_position, ecm_rotation],dim=-1)
@@ -153,10 +154,11 @@ for epoch in (range(params['num_epochs'])):
 
     valid_loss = Loss_test/len(dataloader_test)
     if best_valid_loss > valid_loss:
-        best_valid_loss = valid_loss
-        torch.save(model.state_dict(), os.path.join(models_dir,f"model_{epoch}.pth"))
-        torch.save(model.positions_to_blobs.state_dict(),os.path.join(models_dir,f"positions_to_blobs_{epoch}.pth"))
+        best_valid_loss = valid_loss        
         print('new best model')
+
+    torch.save(model.state_dict(), os.path.join(models_dir,f"model_{epoch}.pth"))
+    torch.save(model.positions_to_blobs.state_dict(),os.path.join(models_dir,f"positions_to_blobs_{epoch}.pth"))
 
 
     print(Loss_train/len(dataloader_train))

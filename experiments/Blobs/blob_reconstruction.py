@@ -36,7 +36,7 @@ def rotate_point(point, pivot, theta):
 
 for size in [64]:
 
-    x_1 = 0.5
+    x_1 = -0.1
     y_1 = 0.5
     s_1 = 10
     a_1 = 2
@@ -57,7 +57,7 @@ for size in [64]:
     plt.imshow(torch_to_numpy(d),vmin=0,vmax=1)
     plt.colorbar()
 
-    plt.savefig(f'test2_{size}.png')
+    plt.savefig(f'test3_{size}.png')
     plt.close()
 
 

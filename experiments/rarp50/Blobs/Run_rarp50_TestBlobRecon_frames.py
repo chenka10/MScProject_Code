@@ -42,7 +42,7 @@ print(device)
 loss_fn_vgg = lpips.LPIPS(net='vgg').to(device)
 
 params = {
-   'frame_size':64,
+   'frame_size':128,
    'batch_size': 1,
    'num_epochs':1,
    'img_compressed_size': 256,
@@ -84,15 +84,15 @@ blobs = [
 
 image_size = params['frame_size']
 
-model = BlobReconstructor(256,blobs,params['batch_size'],include_ecm=True,im_size=image_size).to(device)
+model = BlobReconstructor(256,blobs,params['batch_size'],include_ecm=True,im_size=image_size,expand_blobs_window=True).to(device)
 
-models_dir = f'/home/chen/MScProject/Code/experiments/rarp50/Blobs/2_blobs_seed_{seed}_models'    
+models_dir = f'/home/chen/MScProject/Code/experiments/rarp50/Blobs/2_blobs_extendedBlobWindow_frameSize_{params['frame_size']}_seed_42_models'    
 os.makedirs(models_dir, exist_ok=True)
 
-EPOCH_OF_TEST = 32
+EPOCH_OF_TEST = 14
 model.load_state_dict(torch.load(os.path.join(models_dir,f'model_{EPOCH_OF_TEST}.pth')))
 
-images_dir = f'/home/chen/MScProject/Code/experiments/rarp50/Blobs/testing_frames_{params['frame_size']}_epoch_{EPOCH_OF_TEST}_2_blobs_seed_{seed}_images'
+images_dir = f'/home/chen/MScProject/Code/experiments/rarp50/Blobs/testing_extendedBlobWindow_frames_{params['frame_size']}_epoch_{EPOCH_OF_TEST}_2_blobs_seed_{seed}_images'
 os.makedirs(images_dir, exist_ok=True)
 
 base_frame = torch.zeros(dataset_test[0][0].size()).to(device)
@@ -107,12 +107,12 @@ for epoch in (range(params['num_epochs'])):
     with torch.no_grad():     
         frame_num=0   
         for batch in tqdm(dataloader_test):
-            frames = batch[0].to(device)
+            frames = batch[0].squeeze(1).to(device)
             frames_test = frames
 
-            psm1_position, psm1_rotation = batch[1][0].to(device)*100, batch[1][1].to(device)
-            psm2_position, psm2_rotation = batch[1][2].to(device)*100, batch[1][3].to(device)
-            ecm_position, ecm_rotation = batch[1][4].to(device)*100, batch[1][5].to(device)
+            psm1_position, psm1_rotation = batch[1][0].squeeze(1).to(device)*100, batch[1][1].squeeze(1).to(device)
+            psm2_position, psm2_rotation = batch[1][2].squeeze(1).to(device)*100, batch[1][3].squeeze(1).to(device)
+            ecm_position, ecm_rotation = batch[1][4].squeeze(1).to(device)*100, batch[1][5].squeeze(1).to(device)
 
             kinematics = torch.cat([psm1_position, psm1_rotation, psm2_position, psm2_rotation],dim=-1)
             ecm_kinematics = torch.cat([ecm_position, ecm_rotation],dim=-1)

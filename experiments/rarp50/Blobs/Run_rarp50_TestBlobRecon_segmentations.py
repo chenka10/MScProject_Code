@@ -82,7 +82,7 @@ blobs = [
 
 image_size = 128
 
-model = BlobReconstructor(256,blobs,params['batch_size'],include_ecm=True,im_size=image_size).to(device)
+model = BlobReconstructor(256,blobs,params['batch_size'],include_ecm=True,im_size=image_size,expand_blobs_window=True).to(device)
 
 models_dir = f'/home/chen/MScProject/Code/experiments/rarp50/Blobs/2_blobs_seed_{seed}_models'    
 os.makedirs(models_dir, exist_ok=True)

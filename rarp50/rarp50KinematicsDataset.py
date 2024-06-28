@@ -32,16 +32,34 @@ class rarp50KinematicsDataset(rarp50DatasetBase):
          df = pd.read_csv(kinematics_file_path)
          self.storage[kinematics_file_path] = df
 
-      ecm_kinematics_string = df.at[video_frame_index,'data.Pose_ECM']
-      float_list = [float(x) for x in ecm_kinematics_string.split()]
-      tensor = torch.tensor(float_list)
-      ecm_position, ecm_rotation = self.kinematics_tensor_to_position_rotation(tensor)
+      psm1_positions, psm1_rotations, psm2_positions, psm2_rotations, ecm_positions, ecm_rotations = [],[],[],[],[],[]
 
-      psms_kinematic_string = df.at[video_frame_index,'data.Pose_PSM']
-      float_list = [float(x) for x in psms_kinematic_string.split()]
-      psm1_tensor = torch.tensor(float_list[:12])
-      psm2_tensor = torch.tensor(float_list[12:24])
-      psm1_position,psm1_rotation = self.kinematics_tensor_to_position_rotation(psm1_tensor)
-      psm2_position,psm2_rotation = self.kinematics_tensor_to_position_rotation(psm2_tensor)
+      for frame_i in range(self.frames_to_retrieve):
 
-      return psm1_position, psm1_rotation, psm2_position, psm2_rotation, ecm_position, ecm_rotation         
+         ecm_kinematics_string = df.at[video_frame_index,'data.Pose_ECM']
+         float_list = [float(x) for x in ecm_kinematics_string.split()]
+         tensor = torch.tensor(float_list)
+         ecm_position, ecm_rotation = self.kinematics_tensor_to_position_rotation(tensor)
+
+         psms_kinematic_string = df.at[video_frame_index,'data.Pose_PSM']
+         float_list = [float(x) for x in psms_kinematic_string.split()]
+         psm1_tensor = torch.tensor(float_list[:12])
+         psm2_tensor = torch.tensor(float_list[12:24])
+         psm1_position,psm1_rotation = self.kinematics_tensor_to_position_rotation(psm1_tensor)
+         psm2_position,psm2_rotation = self.kinematics_tensor_to_position_rotation(psm2_tensor)
+
+         psm1_positions.append(psm1_position)
+         psm1_rotations.append(psm1_rotation)
+         psm2_positions.append(psm2_position)
+         psm2_rotations.append(psm2_rotation)
+         ecm_positions.append(ecm_position)
+         ecm_rotations.append(ecm_rotation)
+
+         video_frame_index += self.frame_increments
+
+      return torch.vstack(psm1_positions),\
+            torch.vstack(psm1_rotations),\
+            torch.vstack(psm2_positions),\
+            torch.vstack(psm2_rotations),\
+            torch.vstack(ecm_positions),\
+            torch.vstack(ecm_rotations)

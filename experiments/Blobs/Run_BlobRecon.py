@@ -1,4 +1,5 @@
 import sys
+sys.path.append('/home/chen/MScProject')
 sys.path.append('/home/chen/MScProject/Code')
 sys.path.append('/home/chen/MScProject/Code/models')
 sys.path.append('/home/chen/MScProject/Code/Jigsaws')
@@ -62,7 +63,7 @@ transform = transforms.Compose([
     transforms.ToTensor()
 ])
 
-subject_to_leave = 'D'
+subject_to_leave = 'C'
 
 df = pd.read_csv(os.path.join(config.get_project_dir(),'jigsaws_all_data_detailed.csv'))
 df_train = df[(df['Subject'] != subject_to_leave)].reset_index(drop=True)

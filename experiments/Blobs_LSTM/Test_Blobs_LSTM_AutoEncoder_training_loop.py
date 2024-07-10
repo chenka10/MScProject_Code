@@ -32,6 +32,13 @@ class DistanceLoss(nn.Module):
 
     def forward(self, input, target):
         return get_distance(input, target).mean()
+    
+def find_directory(base_dir, search_string):
+    for root, dirs, files in os.walk(base_dir):
+        for dir_name in dirs:
+            if search_string in dir_name:
+                return os.path.join(root, dir_name)
+    return None
 
 # 1. Set GPU to use
 seed = 42
@@ -46,9 +53,20 @@ print('seed:', seed)
 device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 print(device)
 
+runs_by_subject = { 
+   'B':'9zijshao',
+   'C':'awegarzr',
+   'D':'7ofdpx3x',
+   'E':'nqp7xfd3',
+   'F':'wu8rgstq',
+   'G':'bx6bgjnl',
+   'H':'d5zvd6wc',
+   'I':'wmeaw2hw'
+}
+subject_to_leave = 'D'
+
 # 2. Set params
-params = {
-   'subject_to_leave':'D',
+params = {   
    'frame_size':64,
    'batch_size': 20,
    'num_epochs':20,
@@ -56,14 +74,17 @@ params = {
    'prior_size': 32,
    'subjects_num': 8,
    'past_count': 10,
-   'future_count': 10,
+   'future_count': 20,
    'num_gestures': 16,   
    'lr': 0.0005,
    'beta': 0.001,
    'gamma': 1000, 
    'conditioning':'position',
    'dataset':'JIGSAWS',
-   'seed':seed
+   'seed':seed,
+   'subject_to_leave':subject_to_leave,
+   'orig_runid': runs_by_subject[subject_to_leave],   
+   'epoch_to_test':16
 }
 params['seq_len'] = params['past_count'] + params['future_count']
 
@@ -95,8 +116,8 @@ now = datetime.now()
 timestamp = now.strftime("%Y%m%d_%H%M%S")  # Format: YYYYMMDD_HHMMSS
 
 positions_to_blobs_dir = f'/home/chen/MScProject/Code/experiments/Blobs/2_blobs_seed_42_leave_{params['subject_to_leave']}_models'
-models_dir = f'/home/chen/MScProject/Code/experiments/Blobs_LSTM/models_{params['conditioning']}/2_blobs_models_{timestamp}_leave_{params['subject_to_leave']}_{runid}/'
-images_dir = f'/home/chen/MScProject/Code/experiments/Blobs_LSTM/images_{params['conditioning']}/2_blobs_images_{timestamp}_leave_{params['subject_to_leave']}_{runid}/'
+models_dir = f'/home/chen/MScProject/Code/experiments/Blobs_LSTM/test_models_{params['conditioning']}/2_blobs_models_{timestamp}_leave_{params['subject_to_leave']}_{runid}_origis_{params['orig_runid']}/'
+images_dir = f'/home/chen/MScProject/Code/experiments/Blobs_LSTM/test_images_{params['conditioning']}/2_blobs_images_{timestamp}_leave_{params['subject_to_leave']}_{runid}_origis_{params['orig_runid']}/'
 os.makedirs(images_dir,exist_ok=True)    
 os.makedirs(models_dir,exist_ok=True)
 
@@ -121,6 +142,13 @@ blobs_to_maps = nn.ModuleList([BlobsToFeatureMaps(blob_feature_size,64),BlobsToF
 
 mse = nn.MSELoss(reduce=False)
 
+orig_models_dir = find_directory('/home/chen/MScProject/Code/experiments/Blobs_LSTM/models_position',params['orig_runid'])
+
+frame_encoder.load_state_dict(torch.load(os.path.join(orig_models_dir,f'frame_encoder_{params['epoch_to_test']}.pth')))
+frame_decoder.load_state_dict(torch.load(os.path.join(orig_models_dir,f'frame_decoder_{params['epoch_to_test']}.pth')))
+blobs_to_maps.load_state_dict(torch.load(os.path.join(orig_models_dir,f'blobs_to_maps_{params['epoch_to_test']}.pth')))
+generation_lstm.load_state_dict(torch.load(os.path.join(orig_models_dir,f'generation_lstm_{params['epoch_to_test']}.pth')))
+
 models = [
     frame_encoder,
     frame_decoder,    
@@ -131,44 +159,15 @@ models = [
 parameters = sum([list(model.parameters()) for model in models],[])
 optimizer = optim.Adam(parameters, lr=params['lr'])
 
-for epoch in range(params['num_epochs']):
+with torch.no_grad():
+  valid_loss, valid_ssim_per_future_frame, mover_batch_seq_ind, non_mover_batch_seq_ind, best_batch_seq, worst_batch_seq = validate(models, position_to_blobs, dataloader_valid, params, config, device)    
 
-  # run train and validation loops
-  train_loss, train_ssim_per_future_frame = train(models, position_to_blobs, dataloader_train, optimizer, params, config, device)
-
-  with torch.no_grad():
-    valid_loss, valid_ssim_per_future_frame, mover_batch_seq_ind, non_mover_batch_seq_ind, best_batch_seq, worst_batch_seq = validate(models, position_to_blobs, dataloader_valid, params, config, device)    
-
-  # save model weights  
-  torch.save(frame_encoder.state_dict(),os.path.join(models_dir,f'frame_encoder_{epoch}.pth'))
-  torch.save(frame_decoder.state_dict(),os.path.join(models_dir,f'frame_decoder_{epoch}.pth'))
-  torch.save(generation_lstm.state_dict(),os.path.join(models_dir,f'generation_lstm_{epoch}.pth'))
-  torch.save(blobs_to_maps.state_dict(),os.path.join(models_dir,f'blobs_to_maps_{epoch}.pth'))
-
-  # save visualizations
-  batch_seq_ind_to_save = [mover_batch_seq_ind, non_mover_batch_seq_ind, best_batch_seq, worst_batch_seq]
-  batch_seq_ind_names = ['mover','non-mover','best_mse','worst_mse']
-  display_past_count = 3
-  for i in range(len(batch_seq_ind_to_save)):
-    batch, generated_seq, generated_grayscale_blob_maps, index = batch_seq_ind_to_save[i]
-    frames = batch[0]
-    gestures = batch[1]
-    visualize_frame_diff(images_dir, batch_seq_ind_names[i], index, frames, generated_seq, generated_grayscale_blob_maps, display_past_count, params['past_count'], params['future_count'], epoch, gestures)  
-
-  # print current results
-  print('Epoch {}: train loss {}'.format(epoch,train_loss.tolist()))
-  print('Epoch {}: valid loss {}'.format(epoch,valid_loss.tolist()))    
-  print('Epoch {}: train ssim {}'.format(epoch,[round(val,4) for val in train_ssim_per_future_frame.round(decimals=4).tolist()]))
-  print('Epoch {}: valid ssim {}'.format(epoch,[round(val,4) for val in valid_ssim_per_future_frame.round(decimals=4).tolist()]))    
-
-  # log to wandb
-  if use_wandb:
-    data_to_log = {}
-    for i in range(params['future_count']):
-        data_to_log['train_SSIM_timestep_{}'.format(i)] = train_ssim_per_future_frame[i].item()
-        data_to_log['valid_SSIM_timestep_{}'.format(i)] = valid_ssim_per_future_frame[i].item()
-        
-    data_to_log['train_MSE'] = train_loss[1].item()
-    data_to_log['valid_MSE'] = valid_loss[1].item()
-    # data_to_log['image'] = wandb.Image(image, caption=f"epoch {epoch}")    
-    wandb.log(data_to_log)       
+# log to wandb
+if use_wandb:
+  data_to_log = {}
+  for i in range(params['future_count']):        
+      data_to_log['valid_SSIM_timestep_{}'.format(i)] = valid_ssim_per_future_frame[i].item()
+      
+  data_to_log['valid_MSE'] = valid_loss[1].item()
+  # data_to_log['image'] = wandb.Image(image, caption=f"epoch {epoch}")    
+  wandb.log(data_to_log)       

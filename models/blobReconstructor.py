@@ -215,6 +215,8 @@ class KinematicsToBlobs(nn.Module):
                 curr_pos = kinematics[:,12:]
 
             if self.include_ecm:
+                if ecm_kinematics is None:
+                    raise ValueError('ecm_kinematics is set to be included but was given as None')
                 curr_pos = torch.cat([curr_pos, ecm_kinematics],-1)
                             
             blob_data = self.kinematics_encoders[i](curr_pos)                   
@@ -344,9 +346,9 @@ class BlobReconstructor(nn.Module):
         if blobs_images_visualization is None:
             blobs_images_visualization = [bo.detach().cpu() for bo in blobs_grayscale_maps]
         
-        # output_low = self.decoder(backgrounds)    
+        output_low = self.decoder(backgrounds)    
         
-        output_low = backgrounds # this is for rarp50 trial!
+        # output_low = backgrounds # this is for rarp50 trial!
 
         output_low = combine_blob_maps(output_low, blobs_feature_maps, blobs_grayscale_maps)    
 

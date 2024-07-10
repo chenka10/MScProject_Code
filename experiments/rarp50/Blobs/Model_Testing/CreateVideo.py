@@ -2,7 +2,7 @@ import imageio
 import os
 
 # Directory containing the PNG images
-images_dir = "/home/chen/MScProject/Code/experiments/rarp50/Blobs/testing_extendedBlobWindow_frames_128_epoch_14_2_blobs_seed_42_images"
+images_dir = "/home/chen/MScProject/Code/experiments/rarp50/Blobs/testing_frames_128_epoch_99_2_blobs_seed_42_images"
 
 # List to store image paths
 image_paths = []

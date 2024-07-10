@@ -15,7 +15,7 @@ def visualize_frame_diff(images_dir, title, index_to_show, orig_frames, generate
     if orig_gestures is not None:
       plt.title(orig_gestures[index_to_show,actual_past_count-display_past_count+i].item())
 
-    if i>=display_past_count:
+    if i>=display_past_count and generated_grayscale_blob_maps is not None:
       plt.imshow(torch_to_numpy(generated_grayscale_blob_maps[actual_past_count-display_past_count+i-1][index_to_show,:,:,:]), cmap='jet', alpha=0.15)
 
     plt.xticks([])

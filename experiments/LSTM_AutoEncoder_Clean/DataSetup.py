@@ -24,18 +24,18 @@ def get_dataloaders(params, config):
         jigsaws_sample_rate = 6 # this is not [Hz], this is sampling 1 ouf of 6 frames from the frames we have sampled at 30[Hz]
 
         df = pd.read_csv(os.path.join(config.get_project_dir(),'jigsaws_all_data_detailed.csv'))
-        df_train = df[(df['Subject']=='C')].reset_index(drop=True)
-        df_valid = df[(df['Subject']=='C')].reset_index(drop=True)
+        df_train = df[(df['Subject']!=params['leave_subject'])].reset_index(drop=True)
+        df_valid = df[(df['Subject']==params['leave_subject'])].reset_index(drop=True)
 
         dataset_train = ConcatDataset(JigsawsImageDataset(df_train,config,params['past_count']+params['future_count'],transform,sample_rate=jigsaws_sample_rate),
                                 JigsawsGestureDataset(df_train,config,params['past_count']+params['future_count'],sample_rate=jigsaws_sample_rate),
                                 JigsawsKinematicsDataset(df_train,config,params['past_count']+params['future_count'],sample_rate=jigsaws_sample_rate))
-        dataloader_train = DataLoader(dataset_train, batch_size=params['batch_size'], shuffle=True)
+        dataloader_train = DataLoader(dataset_train, batch_size=params['batch_size'], shuffle=True, drop_last=True)
 
         dataset_valid = ConcatDataset(JigsawsImageDataset(df_valid,config,params['past_count']+params['future_count'],transform,sample_rate=jigsaws_sample_rate),
                                 JigsawsGestureDataset(df_valid,config,params['past_count']+params['future_count'],sample_rate=jigsaws_sample_rate),
                                 JigsawsKinematicsDataset(df_valid,config,params['past_count']+params['future_count'],sample_rate=jigsaws_sample_rate))
-        dataloader_valid = DataLoader(dataset_valid, batch_size=params['batch_size'], shuffle=True)
+        dataloader_valid = DataLoader(dataset_valid, batch_size=params['batch_size'], shuffle=True, drop_last=True)
 
         params['train_subjects'] = df_train['Subject'].unique()
         params['train_repetitions'] = df_train['Repetition'].unique()
@@ -84,7 +84,7 @@ def unpack_batch(params, config, batch, device):
         positions = batch[2][:,:,position_indices].to(device)    
         positions_expanded = expand_positions(positions)
         rotations = batch[2][:,:,rotation_indices].to(device) 
-        rotations = jigsaws_to_quaternions(rotations) 
+        # rotations = jigsaws_to_quaternions(rotations) 
         kinematics = torch.concat([positions_expanded,rotations],dim=-1)
         batch_size = frames.size(0)           
     

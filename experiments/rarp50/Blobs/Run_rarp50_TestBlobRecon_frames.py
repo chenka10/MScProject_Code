@@ -78,21 +78,21 @@ mse = torch.nn.MSELoss()
 #     start_theta: int,
 #     side: str
 blobs = [
-    BlobConfig(0.25,0,6,[1,10],0,'right'),
-    BlobConfig(-0.25,0,6,[1,10],0,'left')
+    BlobConfig(0.25,0,0,[1,10],0,'right'),
+    BlobConfig(-0.25,0,0,[1,10],0,'left')
 ]
 
 image_size = params['frame_size']
 
 model = BlobReconstructor(256,blobs,params['batch_size'],include_ecm=True,im_size=image_size,expand_blobs_window=True).to(device)
 
-models_dir = f'/home/chen/MScProject/Code/experiments/rarp50/Blobs/2_blobs_extendedBlobWindow_frameSize_{params['frame_size']}_seed_42_models'    
+models_dir = f'/home/chen/MScProject/Code/experiments/rarp50/Blobs/2_blobs_frameSize_{params['frame_size']}_seed_42_models'    
 os.makedirs(models_dir, exist_ok=True)
 
-EPOCH_OF_TEST = 14
+EPOCH_OF_TEST = 99
 model.load_state_dict(torch.load(os.path.join(models_dir,f'model_{EPOCH_OF_TEST}.pth')))
 
-images_dir = f'/home/chen/MScProject/Code/experiments/rarp50/Blobs/testing_extendedBlobWindow_frames_{params['frame_size']}_epoch_{EPOCH_OF_TEST}_2_blobs_seed_{seed}_images'
+images_dir = f'/home/chen/MScProject/Code/experiments/rarp50/Blobs/testing_frames_{params['frame_size']}_epoch_{EPOCH_OF_TEST}_2_blobs_seed_{seed}_images'
 os.makedirs(images_dir, exist_ok=True)
 
 base_frame = torch.zeros(dataset_test[0][0].size()).to(device)

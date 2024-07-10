@@ -50,7 +50,8 @@ params = {
    'lr':0.0001,
    'gamma':100,
    'conditioning':'position',
-   'dataset':'rarp50'
+   'dataset':'rarp50',
+   'test_videos':'surgeon_1'
 }
 
 
@@ -59,8 +60,14 @@ transform = transforms.Compose([
 ])
 
 df = pd.read_csv(os.path.join('/home/chen/MScProject/rarp50_segmentations_data_detailed.csv'))
-df_train = df[~df['videoName'].isin(['video_37','video_38','video_39'])].reset_index(drop=True)
-df_test = df[df['videoName'].isin(['video_37','video_38','video_39'])].reset_index(drop=True)
+
+# df_train = df[~df['videoName'].isin(['video_37'])].reset_index(drop=True)
+video_sets = {    
+        'surgeon_1': ['video_8','video_9','video_15_1','video_15_2','video_17_1','video_17_2','video_22','video_23','video_24','video_36','video_37','video_40']     
+}
+
+df_train = df[~df['videoName'].isin(video_sets[params['test_videos']])].reset_index(drop=True)
+df_test = df[df['videoName'].isin(video_sets[params['test_videos']])].reset_index(drop=True)
 
 DIGITS_IN_SEGMENTATION_FILE_NAME = 9
 FRAME_INCREMENT = 60
@@ -82,8 +89,8 @@ mse = torch.nn.MSELoss()
 #     start_theta: int,
 #     side: str
 blobs = [
-    BlobConfig(0.25,0,6,[1,10],0,'right'),
-    BlobConfig(-0.25,0,6,[1,10],0,'left')
+    BlobConfig(0.25,0,0,[1,10],0,'right'),
+    BlobConfig(-0.25,0,0,[1,10],0,'left')
 ]
 
 image_size = params['frame_size']
@@ -91,10 +98,10 @@ image_size = params['frame_size']
 model = BlobReconstructor(256,blobs,params['batch_size'],include_ecm=True,im_size=image_size,expand_blobs_window=True).to(device)
 optimizer = optim.Adam(model.parameters(), lr=params['lr'])
 
-models_dir = f'/home/chen/MScProject/Code/experiments/rarp50/Blobs/2_blobs_extendedBlobWindow_frameSize_{params['frame_size']}_seed_{seed}_models'    
+models_dir = f'/home/chen/MScProject/Code/experiments/rarp50/Blobs/2_blobs_leave_{params['test_videos']}_frameSize_{params['frame_size']}_seed_{seed}_models'    
 os.makedirs(models_dir, exist_ok=True)
 
-images_dir = f'/home/chen/MScProject/Code/experiments/rarp50/Blobs/2_blobs_extendedBlobWindow_frameSize_{params['frame_size']}_seed_{seed}_images'
+images_dir = f'/home/chen/MScProject/Code/experiments/rarp50/Blobs/2_blobs_leave_{params['test_videos']}_frameSize_{params['frame_size']}_seed_{seed}_images'
 os.makedirs(images_dir, exist_ok=True)
 
 base_frame = torch.zeros(dataset_test[0][0].size()).to(device)

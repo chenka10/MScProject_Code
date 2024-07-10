@@ -56,9 +56,10 @@ print(device)
 
 # 2. Set params
 params = {      
-   'frame_size':64,
-   'batch_size': 22,
-   'num_epochs':20,
+   'video_to_leave':'37',
+   'frame_size':128,
+   'batch_size': 8,
+   'num_epochs':100,
    'img_compressed_size': 256,
    'prior_size': 32,
    'subjects_num': 8,
@@ -88,15 +89,15 @@ FRAME_INCREMENT = 12
 
 config.rarp50_videoFramesDir = os.path.join(config.project_baseDir,f'data/rarp50_{params['frame_size']}')    
 
-dataset_train = ConcatDataset(rarp50ImageDataset(df_train,config,params['seq_len'],DIGITS_IN_SEGMENTATION_FILE_NAME,FRAME_INCREMENT),rarp50KinematicsDataset(df_train,config,params['seq_len'],FRAME_INCREMENT))
+dataset_train = ConcatDataset(rarp50ImageDataset(df_train,config,params['seq_len'],DIGITS_IN_SEGMENTATION_FILE_NAME,FRAME_INCREMENT),rarp50KinematicsDataset(df_train,config,params['seq_len']+1,FRAME_INCREMENT))
 dataloader_train = DataLoader(dataset_train,params['batch_size'],True,drop_last=True)
 
-dataset_test = ConcatDataset(rarp50ImageDataset(df_test,config,params['seq_len'],DIGITS_IN_SEGMENTATION_FILE_NAME,FRAME_INCREMENT),rarp50KinematicsDataset(df_test,config,params['seq_len'],FRAME_INCREMENT))
+dataset_test = ConcatDataset(rarp50ImageDataset(df_test,config,params['seq_len'],DIGITS_IN_SEGMENTATION_FILE_NAME,FRAME_INCREMENT),rarp50KinematicsDataset(df_test,config,params['seq_len']+1,FRAME_INCREMENT))
 dataloader_valid = DataLoader(dataset_test,params['batch_size'],True,drop_last=True)
 
 
 # 4. Set if wandb should be used
-use_wandb = False
+use_wandb = True
 start_epoch = 0
 if use_wandb is True:
   import wandb
@@ -104,7 +105,7 @@ if use_wandb is True:
   wandb.init(
      project = 'Robotic Surgery MSc',
      config = params,
-     group = f'Next Frame Prediction - {params['conditioning']} Conditioned  - blobs, leave {params['subject_to_leave']}',
+     group = f'Next Frame Prediction - {params['conditioning']} Conditioned  - blobs, leave {params['video_to_leave']}',
   )
   runid = wandb.run.id
 else:
@@ -114,9 +115,9 @@ else:
 now = datetime.now()
 timestamp = now.strftime("%Y%m%d_%H%M%S")  # Format: YYYYMMDD_HHMMSS
 
-positions_to_blobs_dir = f'/home/chen/MScProject/Code/experiments/rarp50/Blobs/2_blobs_extendedBlobWindow_frameSize_128_seed_42_models'
-models_dir = f'/home/chen/MScProject/Code/experiments/rarp50/Blobs_LSTM/models_{params['conditioning']}/2_blobs_models_{timestamp}_{runid}/'
-images_dir = f'/home/chen/MScProject/Code/experiments/rarp50/Blobs_LSTM/images_{params['conditioning']}/2_blobs_images_{timestamp}_{runid}/'
+positions_to_blobs_dir = f'/home/chen/MScProject/Code/experiments/rarp50/Blobs/2_blobs_frameSize_128_seed_42_models'
+models_dir = f'/home/chen/MScProject/Code/experiments/rarp50/Blobs_LSTM/models_{params['conditioning']}/2_blobs_framesize_{params['frame_size']}_leave_{params['video_to_leave']}_models_{timestamp}_{runid}/'
+images_dir = f'/home/chen/MScProject/Code/experiments/rarp50/Blobs_LSTM/images_{params['conditioning']}/2_blobs_framesize_{params['frame_size']}_leave_{params['video_to_leave']}_images_{timestamp}_{runid}/'
 os.makedirs(images_dir,exist_ok=True)    
 os.makedirs(models_dir,exist_ok=True)
 
@@ -141,13 +142,13 @@ generation_lstm = lstm(params['img_compressed_size'],params['img_compressed_size
 #     start_theta: int,
 #     side: str
 blob_config = [
-    BlobConfig(0.25,0,6,[1,10],0,'right'),
-    BlobConfig(-0.25,0,6,[1,10],0,'left')
+    BlobConfig(0.25,0,0,[1,10],0,'right'),
+    BlobConfig(-0.25,0,0,[1,10],0,'left')
 ]
 
 
-POSITION_TO_BLOBS_MODEL_EPOCH = 14
-position_to_blobs = KinematicsToBlobs(blob_config,True)
+POSITION_TO_BLOBS_MODEL_EPOCH = 99
+position_to_blobs = KinematicsToBlobs(blob_config,True,True)
 position_to_blobs.load_state_dict(torch.load(os.path.join(positions_to_blobs_dir,f'positions_to_blobs_{POSITION_TO_BLOBS_MODEL_EPOCH}.pth')))
 position_to_blobs.to(device)
 img_size = params['frame_size']

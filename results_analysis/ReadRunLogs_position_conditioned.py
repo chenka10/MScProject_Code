@@ -85,7 +85,7 @@ for subject_i,subject in enumerate(subjects):
         plt.plot(last_epoch_ssim_valid.values, marker = 'x', label=f'{i+1} (epochs: {num_epochs})',alpha=0.2)
         plt.xlabel('Generated Frame Number')
         plt.ylabel('SSIM')
-        plt.title(f'Predicted Future-Frame SSIM (leave-{subject}-out)')        
+        plt.title(f'Predicted Future-Frame SSIM')        
         plt.ylim([0.7,1])
         plt.xticks(ticks = list(range(NUM_OF_PRED_FRAMES)),labels=list(range(1,NUM_OF_PRED_FRAMES + 1)))        
 

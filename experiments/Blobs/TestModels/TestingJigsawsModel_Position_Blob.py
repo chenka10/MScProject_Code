@@ -1,4 +1,5 @@
 import sys
+sys.path.append('/home/chen/MScProject')
 sys.path.append('/home/chen/MScProject/Code')
 sys.path.append('/home/chen/MScProject/Code/models')
 sys.path.append('/home/chen/MScProject/Code/Jigsaws')
@@ -74,12 +75,12 @@ for repetition in [1,2,3,4]:
    dataset_for_test_frame = ConcatDataset(JigsawsImageDataset(df_test,config,1,transform,sample_rate=jigsaws_sample_rate),                        
                            JigsawsKinematicsDataset(df_test,config,1,sample_rate=jigsaws_sample_rate))
 
-   model_path = '/home/chen/MScProject/Code/experiments/Blobs/seed_1_42_models/model_6.pth'
+   model_path = '/home/chen/MScProject/Code/experiments/Blobs/2_blobs_seed_42_leave_C_models/model_14.pth'
    blobs = [
-      BlobConfig(0.25,0,4,[2,4],'right'),
-      BlobConfig(-0.25,0,4,[2,4],'left')  
+    BlobConfig(0.25,0,4,[2,5],-torch.pi/7,'right'),
+    BlobConfig(-0.25,0,4,[2,5],0,'left')
    ]
-   model = BlobReconstructor(256,blobs,8).to(device)
+   model = BlobReconstructor(256,blobs,1).to(device)
    model.load_state_dict(torch.load(model_path))
    model.eval()
 
@@ -96,15 +97,15 @@ for repetition in [1,2,3,4]:
       batch = [b.unsqueeze(0) for b in dataset_test[t]]   
       
       frames, gestures, gestures_onehot, positions, rotations, kinematics, _ = unpack_batch(params, config, batch, device)           
+      kinematics = torch.cat([positions[:,:,:3]*100, rotations[:,:,:9], positions[:,:,3:]*100, rotations[:,:,9:]],-1)
 
-      generated_frames,_, blobs = model(base_frame.repeat(batch_size,1,1,1),positions[:,0,:])
+      generated_frames,_, blobs = model(base_frame.repeat(batch_size,1,1,1),kinematics[:,0,:],include_gripper=False)
 
-      fig, axes = plt.subplots(2,2)
+      fig = plt.figure()      
       
-      axes[0,0].imshow(torch_to_numpy(generated_frames[0,:,:,:].detach()))
-      axes[0,1].imshow(torch_to_numpy(frames[0, 0,:,:,:].detach()))
-      axes[1,0].imshow(torch_to_numpy(blobs[0][0,:,:,:].detach()))
-      axes[1,1].imshow(torch_to_numpy(blobs[1][0,:,:,:].detach()))
+      plt.imshow(torch_to_numpy(frames[0, 0,:,:,:].detach()))
+      plt.imshow(torch_to_numpy(blobs[0][0,:,:,:].detach()) + torch_to_numpy(blobs[1][0,:,:,:].detach()),alpha=0.15)
+      
       
       plt.tight_layout()
       plt.savefig(os.path.join(frames_dir,f'test_{t}.png'))

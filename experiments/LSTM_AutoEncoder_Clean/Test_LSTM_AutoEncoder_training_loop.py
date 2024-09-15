@@ -65,7 +65,7 @@ runs_by_subject = {
    'H':'ihjq13i1',
    'I':'l7yeh4hd'
 }
-subject_to_leave = 'D'
+subject_to_leave = 'B'
 
 # 2. Set params
 params = {
@@ -159,7 +159,7 @@ models = [
 # optimizer = optim.Adam(parameters, lr=params['lr'])
 
 with torch.no_grad():
-  valid_loss, valid_ssim_per_future_frame, mover_batch_seq_ind, non_mover_batch_seq_ind, best_batch_seq, worst_batch_seq = validate(models, dataloader_valid, params, config, device)    
+  valid_loss, valid_ssim_per_future_frame, mover_batch_seq_ind, non_mover_batch_seq_ind, best_batch_seq, worst_batch_seq, valid_psnr_per_future_frame, valid_lpips_per_future_frame = validate(models, dataloader_valid, params, config, device)    
 
 # save visualizations
 # batch_seq_ind_to_save = [mover_batch_seq_ind, non_mover_batch_seq_ind, best_batch_seq, worst_batch_seq]
@@ -174,8 +174,10 @@ with torch.no_grad():
 # log to wandb
 if use_wandb:
   data_to_log = {}
-  for i in range(params['future_count']):      
-      data_to_log['valid_SSIM_timestep_{}'.format(i)] = valid_ssim_per_future_frame[i].item()      
+  for i in range(params['future_count']):            
+      data_to_log['valid_SSIM_timestep_{}'.format(i)] = valid_ssim_per_future_frame[i].item()
+      data_to_log['valid_PSNR_timestep_{}'.format(i)] = valid_psnr_per_future_frame[i].item()
+      data_to_log['valid_LPIPS_timestep_{}'.format(i)] = valid_lpips_per_future_frame[i].item()   
   
   data_to_log['valid_MSE'] = valid_loss[1].item()
   # data_to_log['image'] = wandb.Image(image, caption=f"epoch {epoch}")    

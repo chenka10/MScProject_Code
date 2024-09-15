@@ -99,3 +99,21 @@ def flatRotMat_to_quaternion(flat_rot_mat: torch.Tensor):
 # Function to count the total number of parameters
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+def psnr(img1, img2, data_range=1.0):
+    mse = torch.mean((img1 - img2) ** 2)
+    if mse == 0:
+        return float('inf')
+    return 20 * torch.log10(data_range / torch.sqrt(mse))
+
+def psnr_per_batch(img1, img2, data_range=1.0):
+    # Calculate MSE for each image in the batch independently
+    mse = torch.mean((img1 - img2) ** 2, dim=[1, 2, 3])  # Assuming NCHW format (batch, channels, height, width)
+    
+    # Avoid division by zero for perfect matches
+    mse = torch.clamp(mse, min=1e-10)  # Prevent division by zero by clamping small values
+    
+    # Calculate PSNR for each image in the batch
+    psnr_values = 20 * torch.log10(data_range / torch.sqrt(mse))
+    
+    return psnr_values  # This returns a PSNR value for each image in the batch

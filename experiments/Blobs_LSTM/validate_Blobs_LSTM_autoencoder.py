@@ -13,7 +13,7 @@ from tqdm import tqdm
 from models.blobReconstructor import combine_blob_maps
 
 from losses import kl_criterion_normal
-from utils import get_distance, expand_positions
+from utils import get_distance, expand_positions, psnr_per_batch
 
 from Code.experiments.Blobs_LSTM.Blobs_LSTM_DataSetup import unpack_batch
 position_indices = main_config.kinematic_slave_position_indexes
@@ -42,6 +42,8 @@ def validate(models, position_to_blobs, dataloader_valid, params, config, device
   # storages for training metrics
   loss = torch.tensor([0.0,0.0,0.0,0.0])
   ssim_per_future_frame = torch.zeros((params['future_count']))
+  psnr_per_future_frame = torch.zeros((params['future_count']))
+  lpips_per_future_frame = torch.zeros((params['future_count']))
   for batch in tqdm(dataloader_valid):        
 
     frames, gestures, gestures_onehot, positions, rotations, kinematics, batch_size = unpack_batch(params, config, batch, device)      
@@ -70,7 +72,14 @@ def validate(models, position_to_blobs, dataloader_valid, params, config, device
 
     # get avg. position diffrences for every sequence in the batch
     distance_weight = get_distance(positions[:,:-1,:],positions[:,1:,:])      
-    batch_mover = distance_weight[:,params['past_count']:].sum(dim=1).argmax().item()
+    # batch_mover = distance_weight[:,params['past_count']:].sum(dim=1).argmax().item()
+
+    k = 2
+    values, indices = torch.topk(distance_weight[:,params['past_count']:].sum(dim=1), k)
+
+    # The index of the 3rd highest element
+    batch_mover = indices[-1].item()
+
     batch_least_mover = distance_weight[:,params['past_count']:].sum(dim=1).argmin().item()
     distance_weight = distance_weight.sum(dim=1)/params['seq_len']
 
@@ -129,6 +138,14 @@ def validate(models, position_to_blobs, dataloader_valid, params, config, device
         ssim_per_batch = ssim(decoded_frames, frames[:,t,:,:,:],data_range=1, size_average=False)
         ssim_per_future_frame[t-params['past_count']] += (ssim_per_batch.mean().item())
 
+        # Compute PSNR (my images are in the range of 0 to 1)
+        psnr_value = psnr_per_batch(decoded_frames, frames[:, t, :, :, :], data_range=1)
+        psnr_per_future_frame[t - params['past_count']] += psnr_value.mean().item()
+
+        # Compute LPIPS
+        lpips_value = loss_fn_vgg(decoded_frames, frames[:, t, :, :, :])
+        lpips_per_future_frame[t - params['past_count']] += lpips_value.mean().item()
+
     # save worst and best batch in terms of mse for qualitative display later
     worst_mse_batch_index = loss_MSE_per_batch.argmax().item()
     best_mse_batch_index = loss_MSE_per_batch.argmin().item()
@@ -146,10 +163,12 @@ def validate(models, position_to_blobs, dataloader_valid, params, config, device
 
   loss /= len(dataloader_valid)
   ssim_per_future_frame /= len(dataloader_valid)
+  psnr_per_future_frame /= len(dataloader_valid)
+  lpips_per_future_frame /= len(dataloader_valid)  
 
   mover_batch_seq_ind = ([frames.detach().cpu(), gestures.detach().cpu()], generated_seq, generated_grayscale_maps, batch_mover)
   non_mover_batch_seq_ind = ([frames.detach().cpu(), gestures.detach().cpu()], generated_seq, generated_grayscale_maps, batch_least_mover)
 
-  return loss, ssim_per_future_frame, mover_batch_seq_ind, non_mover_batch_seq_ind, best_batch_seq_ind, worst_batch_seq_ind
+  return loss, ssim_per_future_frame, mover_batch_seq_ind, non_mover_batch_seq_ind, best_batch_seq_ind, worst_batch_seq_ind, psnr_per_future_frame, lpips_per_future_frame
 
 

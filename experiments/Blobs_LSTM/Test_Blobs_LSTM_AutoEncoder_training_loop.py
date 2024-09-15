@@ -63,7 +63,7 @@ runs_by_subject = {
    'H':'d5zvd6wc',
    'I':'wmeaw2hw'
 }
-subject_to_leave = 'F'
+subject_to_leave = 'B'
 
 # 2. Set params
 params = {   
@@ -160,24 +160,26 @@ parameters = sum([list(model.parameters()) for model in models],[])
 optimizer = optim.Adam(parameters, lr=params['lr'])
 
 with torch.no_grad():
-  valid_loss, valid_ssim_per_future_frame, mover_batch_seq_ind, non_mover_batch_seq_ind, best_batch_seq, worst_batch_seq = validate(models, position_to_blobs, dataloader_valid, params, config, device)    
+  valid_loss, valid_ssim_per_future_frame, mover_batch_seq_ind, non_mover_batch_seq_ind, best_batch_seq, worst_batch_seq, valid_psnr_per_future_frame, valid_lpips_per_future_frame = validate(models, position_to_blobs, dataloader_valid, params, config, device)    
 
 # save visualizations
-batch_seq_ind_to_save = [mover_batch_seq_ind, non_mover_batch_seq_ind, best_batch_seq, worst_batch_seq]
-batch_seq_ind_names = ['mover','non-mover','best_mse','worst_mse']
-display_past_count = 3
-for i in range(len(batch_seq_ind_to_save)):
-    batch, generated_seq, generated_grayscale_blob_maps, index = batch_seq_ind_to_save[i]
-    frames = batch[0]
-    gestures = batch[1]    
-    visualize_frame_diff_for_test(images_dir, batch_seq_ind_names[i], index, frames, generated_seq, generated_grayscale_blob_maps, display_past_count, params['past_count'], params['future_count'], 0, gestures)  
+# batch_seq_ind_to_save = [mover_batch_seq_ind, non_mover_batch_seq_ind, best_batch_seq, worst_batch_seq]
+# batch_seq_ind_names = ['mover','non-mover','best_mse','worst_mse']
+# display_past_count = 3
+# for i in range(len(batch_seq_ind_to_save)):
+#     batch, generated_seq, generated_grayscale_blob_maps, index = batch_seq_ind_to_save[i]
+#     frames = batch[0]
+#     gestures = batch[1]    
+#     visualize_frame_diff_for_test(images_dir, batch_seq_ind_names[i], index, frames, generated_seq, generated_grayscale_blob_maps, display_past_count, params['past_count'], params['future_count'], 0, gestures)  
 
 # log to wandb
-# if use_wandb:
-#   data_to_log = {}
-#   for i in range(params['future_count']):        
-#       data_to_log['valid_SSIM_timestep_{}'.format(i)] = valid_ssim_per_future_frame[i].item()
+if use_wandb:
+  data_to_log = {}
+  for i in range(params['future_count']):        
+      data_to_log['valid_SSIM_timestep_{}'.format(i)] = valid_ssim_per_future_frame[i].item()
+      data_to_log['valid_PSNR_timestep_{}'.format(i)] = valid_psnr_per_future_frame[i].item()
+      data_to_log['valid_LPIPS_timestep_{}'.format(i)] = valid_lpips_per_future_frame[i].item()
       
-#   data_to_log['valid_MSE'] = valid_loss[1].item()
-#   # data_to_log['image'] = wandb.Image(image, caption=f"epoch {epoch}")    
-#   wandb.log(data_to_log)       
+  data_to_log['valid_MSE'] = valid_loss[1].item()
+  # data_to_log['image'] = wandb.Image(image, caption=f"epoch {epoch}")    
+  wandb.log(data_to_log)       

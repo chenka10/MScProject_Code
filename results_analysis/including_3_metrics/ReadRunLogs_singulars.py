@@ -4,10 +4,13 @@ import matplotlib.pyplot as plt
 api = wandb.Api()
 runs = api.runs("chenka/Robotic Surgery MSc")
 
-metrics = ['SSIM','PSNR','LPIPS']
-subjects = ['B','C','D','E','F','G','H','I']
+# subjects = ['B','C','D','E','F','G','H','I']
 NUM_OF_PRED_FRAMES = 20
+metrics = ['SSIM','PSNR','LPIPS']
+# subjects = ['B','C','D','E']
+subjects = ['F','G','H','I']
 NUM_SUBJECTS = len(subjects)
+
 runid_names = {
     'B':{
         'runids':["uj8pfyjb","cnp06uk0"],
@@ -44,8 +47,7 @@ runid_names = {
 }
 epochs_to_take = 18
 
-def get_metric_results_from_wandb(runid,metric):
-    last_epoch_ssim_train = None
+def get_metric_results_from_wandb(runid, metric):    
     last_epoch_ssim_valid = None
 
     for run in runs:
@@ -57,16 +59,12 @@ def get_metric_results_from_wandb(runid,metric):
 
     return last_epoch_ssim_valid
 
-fig = plt.figure(figsize=(14,3))  
-i_plot = 0
-
 for metric in metrics:
-
+    fig = plt.figure(figsize=(10,6))    
+    
     sum_last_epoch_ssim_valid_BLOB = None
     sum_last_epoch_ssim_valid_SVG = None
 
-    i_plot+=1
-    plt.subplot(1,3,i_plot)
     for subject_i,subject in enumerate(subjects):
 
         runids = runid_names[subject]['runids']
@@ -75,34 +73,39 @@ for metric in metrics:
 
         for i,runid in enumerate(runids):
 
-            last_epoch_metric_valid = get_metric_results_from_wandb(runid, metric)  
+            last_epoch_ssim_valid = get_metric_results_from_wandb(runid, metric)  
 
             if sum_last_epoch_ssim_valid_BLOB is None:    
                 if i==0:        
-                    sum_last_epoch_ssim_valid_SVG = last_epoch_metric_valid.values            
+                    sum_last_epoch_ssim_valid_SVG = last_epoch_ssim_valid.values            
                 else:
-                    sum_last_epoch_ssim_valid_BLOB = last_epoch_metric_valid.values            
+                    sum_last_epoch_ssim_valid_BLOB = last_epoch_ssim_valid.values            
             else:       
                 if i==0:        
-                    sum_last_epoch_ssim_valid_SVG += last_epoch_metric_valid.values            
+                    sum_last_epoch_ssim_valid_SVG += last_epoch_ssim_valid.values            
                 else:
-                    sum_last_epoch_ssim_valid_BLOB += last_epoch_metric_valid.values 
-    
-    plt.xlabel('Generated Frame Number')
-    plt.ylabel(f'{metric}')        
-    # plt.ylim([0.7,1])
-    plt.xticks(ticks = list(range(NUM_OF_PRED_FRAMES)),labels=list(range(1,NUM_OF_PRED_FRAMES + 1)))        
+                    sum_last_epoch_ssim_valid_BLOB += last_epoch_ssim_valid.values 
+                    
+            plt.subplot(2,2,subject_i+1)
+            if i==0:
+                plt.plot(last_epoch_ssim_valid.values, marker = 'x', label=runid_names[subject]['run_names'][0],alpha=1,color='tab:blue')
+            else:
+                plt.plot(last_epoch_ssim_valid.values, marker = 'x', label=runid_names[subject]['run_names'][1],alpha=1,color='tab:orange')
+            plt.xlabel('Generated Frame Number')
+            plt.ylabel(f'{metric}')
+            plt.title(f'Predicted Future-Frame {metric} (leave-{subject}-out)')        
+            # plt.ylim([0.7,1])
+            plt.xticks(ticks = list(range(NUM_OF_PRED_FRAMES)),labels=list(range(1,NUM_OF_PRED_FRAMES + 1)))        
+            plt.axvline(x=9, color='red',linestyle='--')
+            handles, labels = plt.gca().get_legend_handles_labels()
+            plt.legend(handles[:2], labels[:2])
 
-    plt.plot(sum_last_epoch_ssim_valid_SVG/NUM_SUBJECTS, marker = 'x', color='tab:blue',label='mean (SVG*)')
-    plt.plot(sum_last_epoch_ssim_valid_BLOB/NUM_SUBJECTS, marker = 'x', color='tab:orange',label='mean (Blobs)')
-    plt.axvline(x=9,color='red',linestyle='--',label='last pred. during training')   
-    plt.legend()
+    plt.tight_layout()
+
+    fig.savefig(f'new_{metric}_results_all_position_blob_svg_3.png')
+    plt.close()
 
 
 
-plt.suptitle(f'Generated Future-Frame Comparison (LOUO folds mean)')  
-plt.tight_layout()
-fig.savefig(f'new_results_all_position_blob_svg_avg.png')
-plt.close()
 
 

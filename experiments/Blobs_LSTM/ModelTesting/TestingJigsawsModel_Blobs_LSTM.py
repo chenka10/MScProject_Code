@@ -47,8 +47,9 @@ params = {
 params['seq_len'] = params['past_count'] + params['future_count']
 
 taskId = 2
-subject = 'C'
+subject = 'G'
 repetition = 5
+# !!!!! MUST specify correct model dir!!!!!!!!!
 
 past_count = params['past_count']
 future_count = params['future_count']
@@ -57,7 +58,7 @@ transform = transforms.Compose([
     transforms.ToTensor()
 ])
 df = pd.read_csv(os.path.join(config.get_project_dir(),'jigsaws_all_data_detailed.csv'))
-df_test = df[(df['Subject']=='C') & (df['Repetition']==repetition)].reset_index(drop=True)
+df_test = df[(df['Subject']==subject) & (df['Repetition']==repetition)].reset_index(drop=True)
 
 jigsaws_sample_rate = 6
 dataset_test = ConcatDataset(JigsawsImageDataset(df_test,config,2,transform,sample_rate=jigsaws_sample_rate),
@@ -66,7 +67,7 @@ dataset_test = ConcatDataset(JigsawsImageDataset(df_test,config,2,transform,samp
 
 
 # load models
-models_dir = '/home/chen/MScProject/Code/experiments/Blobs_LSTM/models_position/2_blobs_models_20240603_101407_a3di9j14'
+models_dir = f'/home/chen/MScProject/Code/experiments/Blobs_LSTM/models_position/2_blobs_models_20240624_075509_leave_G_bx6bgjnl'
 epoch = 18
 
 blob_feature_size = 16
@@ -95,8 +96,8 @@ blob_config = [
     BlobConfig(-0.25,0,4,[2,5],0,'left')
 ]
 position_to_blobs = KinematicsToBlobs(blob_config)
-positions_to_blobs_dir = '/home/chen/MScProject/Code/experiments/Blobs/2_blobs_seed_42_models'
-position_to_blobs.load_state_dict(torch.load(os.path.join(positions_to_blobs_dir,'positions_to_blobs_7.pth')))
+positions_to_blobs_dir = f'/home/chen/MScProject/Code/experiments/Blobs/2_blobs_seed_42_leave_{subject}_models'
+position_to_blobs.load_state_dict(torch.load(os.path.join(positions_to_blobs_dir,'positions_to_blobs_14.pth')))
 position_to_blobs.to(device)
 position_to_blobs.eval()
 
@@ -108,7 +109,7 @@ blobs_to_maps.to(device)
 blobs_to_maps.eval()
 
 
-frames_dir = f'/home/chen/MScProject/Code/experiments/Blobs_LSTM/ModelTesting/V1_3_a3di9j14_{taskId}_{subject}_{repetition}_{params['conditioning']}'
+frames_dir = f'/home/chen/MScProject/Code/experiments/Blobs_LSTM/ModelTesting/{taskId}_{subject}_{repetition}_{params['conditioning']}'
 os.makedirs(frames_dir, exist_ok=True)
 
 generation_lstm.hidden = generation_lstm.init_hidden()

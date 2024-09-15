@@ -2,7 +2,7 @@ import imageio
 import os
 
 # Directory containing the PNG images
-images_dir = "/home/chen/MScProject/Code/experiments/Blobs/ModelTesting/1_C_1/"
+images_dir = "/home/chen/MScProject/Code/experiments/Blobs_LSTM/ModelTesting/2_I_5_position"
 
 # List to store image paths
 image_paths = []

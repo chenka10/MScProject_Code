@@ -38,17 +38,17 @@ params = {
 }
 params['seq_len'] = params['past_count'] + params['future_count']
 if params['conditioning'] == 'position':
-   params['added_vec_size'] = 32
+   params['added_vec_size'] = 42
 elif params['conditioning'] == 'gesture':
    params['added_vec_size'] = 16
 else:
    raise ValueError()
 
 
-runid = 'a3di9j14'
+runid = '4qu8d6zv'
 taskId = 2
-subject = 'C'
-repetition = 1
+subject = 'G'
+repetition = 5
 
 past_count = params['past_count']
 future_count = params['future_count']
@@ -57,7 +57,7 @@ transform = transforms.Compose([
     transforms.ToTensor()
 ])
 df = pd.read_csv(os.path.join(config.get_project_dir(),'jigsaws_all_data_detailed.csv'))
-df_test = df[(df['Subject']=='C') & (df['Repetition']==repetition)].reset_index(drop=True)
+df_test = df[(df['Subject']==subject) & (df['Repetition']==repetition)].reset_index(drop=True)
 
 jigsaws_sample_rate = 6
 dataset_test = ConcatDataset(JigsawsImageDataset(df_test,config,1,transform,sample_rate=jigsaws_sample_rate),

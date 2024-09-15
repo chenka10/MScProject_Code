@@ -108,12 +108,12 @@ plt.axvline(x=9,color='red',linestyle='--',label='last pred. during training')
 # plt.legend(handles[-2:], labels[-2:])
 plt.legend()
 
-plt.title(f'Predicted Future-Frame SSIM (LOUO folds mean)')        
+plt.title(f'Generated Future-Frame SSIM (LOUO folds mean)')        
 
 plt.tight_layout()
 
 
-fig.savefig(f'new_SSIM_results_all_position_blob_svg_avg.png')
+fig.savefig(f'new_SSIM_results_all_position_blob_svg_avg1.png')
 plt.close()
 
 

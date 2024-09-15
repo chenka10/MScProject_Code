@@ -24,6 +24,7 @@ from experiments.Blobs_LSTM.validate_Blobs_LSTM_autoencoder import validate
 from experiments.Blobs_LSTM.Blobs_LSTM_DataSetup import get_dataloaders
 import random
 import numpy as np
+from utils import count_parameters
 
 
 class DistanceLoss(nn.Module):
@@ -127,6 +128,11 @@ models = [
     generation_lstm,
     blobs_to_maps   
 ]
+
+total_params = count_parameters(position_to_blobs)
+for model in models:   
+   total_params+=count_parameters(model)
+print("total params: "+total_params)
 
 parameters = sum([list(model.parameters()) for model in models],[])
 optimizer = optim.Adam(parameters, lr=params['lr'])

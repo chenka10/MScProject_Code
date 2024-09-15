@@ -94,3 +94,8 @@ def flatRotMat_to_quaternion(flat_rot_mat: torch.Tensor):
 
 
   return torch.stack([q0, q1, q2, q3],dim=-1)
+
+
+# Function to count the total number of parameters
+def count_parameters(model):
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)

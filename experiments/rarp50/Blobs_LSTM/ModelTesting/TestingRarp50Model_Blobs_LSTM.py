@@ -14,6 +14,9 @@ from Code.rarp50.rarp50Config import config
 from Code.rarp50.rarp50ImageDataset import rarp50ImageDataset
 from Code.rarp50.rarp50KinematicsDataset import rarp50KinematicsDataset
 
+from Code.experiments.rarp50.Blobs_LSTM.validate_rarp50_Blobs_LSTM_autoencoder import validate
+from visualizations import visualize_frame_diff
+
 
 import pandas as pd
 import os
@@ -38,8 +41,8 @@ params = {
    'num_epochs':100,
    'img_compressed_size': 256,
    'prior_size': 32,   
-   'past_count': 100,
-   'future_count': 30,
+   'past_count': 10,
+   'future_count': 10,
    'num_gestures': 16, 
    'conditioning':'position', #'gesture'   
    'dataset':'JIGSAWS'
@@ -103,17 +106,20 @@ blobs_to_maps = nn.ModuleList([BlobsToFeatureMaps(blob_feature_size,img_size),Bl
                                BlobsToFeatureMaps(blob_feature_size,img_size/2),BlobsToFeatureMaps(blob_feature_size,img_size/2),        
                                BlobsToFeatureMaps(blob_feature_size,img_size/4),BlobsToFeatureMaps(blob_feature_size,img_size/4),
                                ]).to(device)
+blobs_to_maps.load_state_dict(torch.load(os.path.join(models_dir,f'blobs_to_maps_{epoch}.pth')))
 blobs_to_maps.eval()
 
+START_FRAME = 110
 
-frames_dir = f'/home/chen/MScProject/Code/experiments/rarp50/Blobs_LSTM/ModelTesting/2_blobs_framesize_128_leave_37_models_20240629_174022_i1mrwoir'
+frames_dir = f'/home/chen/MScProject/Code/experiments/rarp50/Blobs_LSTM/ModelTesting/2_blobs_framesize_128_leave_37_models_20240629_174022_i1mrwoir_bugfix_startFrame_{START_FRAME}'
 os.makedirs(frames_dir, exist_ok=True)
 
 generation_lstm.hidden = generation_lstm.init_hidden()
 
-START_FRAME = 30
-for t in tqdm(range(START_FRAME, len(dataset))):     
+frame_index = 0
+for t in tqdm(range(START_FRAME-params['past_count'], len(dataset))):     
    
+   frame_index+=1
    batch = dataset[t]
 
    frames, kinematics,ecm_kinematics, positions, batch_size = unpack_batch_rarp50(batch, device)
@@ -140,7 +146,7 @@ for t in tqdm(range(START_FRAME, len(dataset))):
                                                       [grayscale_maps[i*2],grayscale_maps[i*2+1]]))
 
    # keep loading past frames (for conditioning), once conditioning is over, load previously encoded frames
-   if (t-START_FRAME) <= params['past_count']:          
+   if (START_FRAME-t) > 0:          
       frames_t_minus_one, skips = frame_encoder(frames[:,0,:,:,:])
       skips[0] = torch.concat([skips[0],combined_blobs_feature_maps[0]],1)
       skips[1] = torch.concat([skips[1],combined_blobs_feature_maps[1]],1)
@@ -153,18 +159,28 @@ for t in tqdm(range(START_FRAME, len(dataset))):
    
 
    # predict next frame latent, decode next frame, store next frame
-   frames_to_decode = generation_lstm(frames_t_minus_one).float()
+   frames_to_decode = generation_lstm(frames_t_minus_one.float())
    decoded_frames = frame_decoder([frames_to_decode,skips]).cpu()
 
-   fig, axes = plt.subplots(1,3)
-   
+   fig, axes = plt.subplots(1,3,figsize=(12,4))
+      
    axes[0].imshow(torch_to_numpy(decoded_frames[0,:,:,:].detach()))
+   axes[0].axis('off')
+   axes[0].set_title('Generated')  # Add title to first subplot
+
    axes[1].imshow(torch_to_numpy(frames[0,1,:,:,:].detach()))
+   axes[1].axis('off')
+   axes[1].set_title('Ground-Truth')  # Add title to second subplot
+
    axes[2].imshow(torch_to_numpy(grayscale_maps[0][0].detach()) + torch_to_numpy(grayscale_maps[1][0].detach()))
-   
+   axes[2].axis('off')
+   axes[2].set_title('Blobs')  # Add title to third subplot
+      
+   fig.suptitle(f'Frame Number: {frame_index}')
+
    plt.tight_layout()
    plt.savefig(os.path.join(frames_dir,f'test_{t}.png'))
-   plt.close()   
+   plt.close()
 
    frames = None
    gestures = None

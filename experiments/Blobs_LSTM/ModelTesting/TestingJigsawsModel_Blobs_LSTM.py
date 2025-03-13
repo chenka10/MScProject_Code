@@ -32,6 +32,9 @@ import matplotlib.pyplot as plt
 device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 print(device)
 
+frame_generation_time = 0
+total_frames_num = 0
+
 params = {
    'frame_size':64,
    'batch_size': 8,
@@ -109,7 +112,7 @@ blobs_to_maps.to(device)
 blobs_to_maps.eval()
 
 
-frames_dir = f'/home/chen/MScProject/Code/experiments/Blobs_LSTM/ModelTesting/{taskId}_{subject}_{repetition}_{params['conditioning']}'
+frames_dir = f'/home/chen/MScProject/Code/experiments/Blobs_LSTM/ModelTesting/{taskId}_{subject}_{repetition}_{params['conditioning']}_nnn'
 os.makedirs(frames_dir, exist_ok=True)
 
 generation_lstm.hidden = generation_lstm.init_hidden()
@@ -119,6 +122,8 @@ for t in tqdm(range(len(dataset_test))):
    batch = [b.unsqueeze(0) for b in dataset_test[t]]   
    
    frames, gestures, gestures_onehot, positions, rotations, kinematics, _ = unpack_batch(params, config, batch, device)           
+
+   start_time = time.time()
 
    blob_datas = position_to_blobs(kinematics[:,1,:])
    feature_maps = []
@@ -151,6 +156,10 @@ for t in tqdm(range(len(dataset_test))):
    # predict next frame latent, decode next frame, store next frame
    frames_to_decode = generation_lstm(frames_t_minus_one).float()
    decoded_frames = frame_decoder([frames_to_decode,skips]).cpu()
+   curr_frame_took = (time.time()-start_time)
+   print('curr frame took: '+str(curr_frame_took))
+   frame_generation_time += curr_frame_took
+   total_frames_num+=1
 
    fig, axes = plt.subplots(1,2)
    
@@ -159,7 +168,10 @@ for t in tqdm(range(len(dataset_test))):
    
    plt.tight_layout()
    plt.savefig(os.path.join(frames_dir,f'test_{t}.png'))
-   plt.close()   
+   plt.close()  
+
+   
+   print('avg frame time: '+str(frame_generation_time/total_frames_num)) 
 
    frames = None
    gestures = None

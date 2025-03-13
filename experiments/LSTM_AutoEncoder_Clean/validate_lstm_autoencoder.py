@@ -84,7 +84,7 @@ def validate(models, dataloader_valid, params, config, device):
       else:          
         frames_t_minus_one = frame_encoder(decoded_frames)[0]       
       
-      z,mu,logvar = prior_lstm(frames_t_minus_one)        
+      # z,mu,logvar = prior_lstm(frames_t_minus_one)        
 
       # load condition data of current frame
       if params['conditioning'] == 'position':
@@ -93,7 +93,7 @@ def validate(models, dataloader_valid, params, config, device):
         conditioning_vec = gestures_onehot[:,t,:]
 
       # predict next frame latent, decode next frame, store next frame
-      frames_to_decode = generation_lstm(torch.cat([frames_t_minus_one,z,conditioning_vec],dim=-1).float())
+      frames_to_decode = generation_lstm(torch.cat([frames_t_minus_one,conditioning_vec],dim=-1).float())
       decoded_frames = frame_decoder([frames_to_decode,skips])
       generated_seq.append(decoded_frames.detach().cpu())
       
@@ -102,7 +102,8 @@ def validate(models, dataloader_valid, params, config, device):
       loss_MSE_per_batch += mse_per_batch.cpu()
       loss_MSE += (distance_weight*mse_per_batch).mean()
       loss_PER += (distance_weight*loss_fn_vgg((decoded_frames*2)-1, (frames[:,t,:,:,:]*2)-1).sum(-1).sum(-1).sum(-1)).mean()
-      loss_KLD += params['beta']*kl_criterion_normal(mu,logvar)
+      # loss_KLD += params['beta']*kl_criterion_normal(mu,logvar)
+      loss_KLD += 0
 
       # for all predicted future frames compute SSIM with real future frames
       if t>=params['past_count']:

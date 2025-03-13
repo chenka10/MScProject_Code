@@ -11,7 +11,7 @@ loss_fn_vgg = lpips.LPIPS(net='vgg')
 
 mse = nn.MSELoss(reduce=False)
 
-def train(models, position_to_blobs: KinematicsToBlobs, dataloader_train, optimizer, params, config, device):
+def train(models, position_to_blobs: KinematicsToBlobs, dataloader_train, optimizer, params, config, device, max_steps:int=None):
 
   loss_fn_vgg.to(device)
 
@@ -25,7 +25,12 @@ def train(models, position_to_blobs: KinematicsToBlobs, dataloader_train, optimi
   loss = torch.tensor([0.0,0.0,0.0,0.0]) # [MSE + beta*KLD, MSE, KLD]
   ssim_per_future_frame = torch.zeros((params['future_count']))
 
+  step_index = 0
   for batch in tqdm(dataloader_train):
+
+    step_index+=1
+    if max_steps is not None and step_index > max_steps:
+      break
 
     frames, kinematics,ecm_kinematics, positions, batch_size = unpack_batch_rarp50(batch, device) 
 

@@ -69,7 +69,7 @@ def train(models, dataloader_train, optimizer, params, config, device):
         skips = seq[t-1][1]            
 
       # compute prior (z) using prior lstm
-      z,mu,logvar = prior_lstm(frames_t_minus_one)
+      # z,mu,logvar = prior_lstm(frames_t_minus_one)
 
       # load condition data of current frame
       if params['conditioning'] == 'position':
@@ -78,7 +78,7 @@ def train(models, dataloader_train, optimizer, params, config, device):
         conditioning_vec = gestures_onehot[:,t,:]
 
       # predict next frame latent, decode next frame, store next frame
-      frames_to_decode = generation_lstm(torch.cat([frames_t_minus_one,z,conditioning_vec],dim=-1).float())
+      frames_to_decode = generation_lstm(torch.cat([frames_t_minus_one,conditioning_vec],dim=-1).float())
 
       contains_nan = torch.isnan(frames_to_decode).any().item()
       if contains_nan:
@@ -91,7 +91,7 @@ def train(models, dataloader_train, optimizer, params, config, device):
       mse_per_batch = mse(decoded_frames, frames[:,t,:,:,:]).sum(-1).sum(-1).sum(-1)
       loss_MSE += (distance_weight*mse_per_batch).mean()
       loss_PER += (distance_weight*loss_fn_vgg((decoded_frames*2)-1, (frames[:,t,:,:,:]*2)-1).sum(-1).sum(-1).sum(-1)).mean()
-      loss_KLD += kl_criterion_normal(mu,logvar) 
+      loss_KLD += 0
 
       # for all predicted future frames compute SSIM with real future frames
       if t>=params['past_count']:

@@ -47,16 +47,28 @@ device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 print(device)
 
 
+# orig runs (with stochasticity)
+# runs_by_subject = { 
+#    'B':'lob314nf',
+#    'C':'kh4d1ek2',
+#    'D':'cg7poged',
+#    'E':'4ljrmbff',
+#    'F':'iss6qjlg',
+#    'G':'4qu8d6zv',
+#    'H':'ihjq13i1',
+#    'I':'l7yeh4hd'
+# }
 
+# new runs, without stochasticity
 runs_by_subject = { 
-   'B':'lob314nf',
-   'C':'kh4d1ek2',
-   'D':'cg7poged',
-   'E':'4ljrmbff',
-   'F':'iss6qjlg',
-   'G':'4qu8d6zv',
-   'H':'ihjq13i1',
-   'I':'l7yeh4hd'
+   'B':'szd7k3ik',
+   'C':'pqtlqg5s',
+   'D':'vho78zpl',
+   'E':'wa03z4zy',
+   'F':'omkx5o3y',
+   'G':'wre4dyc1',
+   'H':'eob2acos',
+   'I':'8gc7yvv2'
 }
 
 for subject_to_leave in ['B','C','D','E','F','G','H','I']:
@@ -76,7 +88,7 @@ for subject_to_leave in ['B','C','D','E','F','G','H','I']:
       'batch_size': 8,
       'num_epochs':100,
       'img_compressed_size': 256,
-      'prior_size': 32,
+      'prior_size': 0,
       'subjects_num': 8,
       'past_count': 10,
       'future_count': 20,
@@ -148,7 +160,7 @@ for subject_to_leave in ['B','C','D','E','F','G','H','I']:
 
    frame_encoder.load_state_dict(torch.load(os.path.join(orig_models_dir,f'frame_encoder.pth')))
    frame_decoder.load_state_dict(torch.load(os.path.join(orig_models_dir,f'frame_decoder.pth')))
-   prior_lstm.load_state_dict(torch.load(os.path.join(orig_models_dir,f'prior_lstm.pth')))
+   # prior_lstm.load_state_dict(torch.load(os.path.join(orig_models_dir,f'prior_lstm.pth')))
    generation_lstm.load_state_dict(torch.load(os.path.join(orig_models_dir,f'generation_lstm.pth')))
 
    models = [

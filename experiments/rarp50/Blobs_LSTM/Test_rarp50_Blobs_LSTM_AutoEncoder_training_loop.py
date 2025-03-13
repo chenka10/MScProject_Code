@@ -61,7 +61,7 @@ print('seed:', seed)
 device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 print(device)
 
-epoch_to_test = 19
+epoch_to_test = 21
 orig_run_id_to_test = 'i1mrwoir'
 
 # 2. Set params
@@ -69,7 +69,7 @@ params = {
    'video_to_leave':'37',
    'frame_size':128,
    'batch_size': 8,
-   'num_epochs':100,
+   'num_epochs':1,
    'img_compressed_size': 256,
    'prior_size': 32,
    'subjects_num': 8,
@@ -169,10 +169,12 @@ blobs_to_maps = nn.ModuleList([BlobsToFeatureMaps(blob_feature_size,img_size),Bl
                                ]).to(device)
 
 orig_models_dir = find_directory('/home/chen/MScProject/Code/experiments/rarp50/Blobs_LSTM/models_position',orig_run_id_to_test)
+print('models dir: ',orig_models_dir)
 
 frame_encoder.load_state_dict(torch.load(os.path.join(orig_models_dir,f'frame_encoder_{epoch_to_test}.pth')))
 frame_decoder.load_state_dict(torch.load(os.path.join(orig_models_dir,f'frame_decoder_{epoch_to_test}.pth')))
 generation_lstm.load_state_dict(torch.load(os.path.join(orig_models_dir,f'generation_lstm_{epoch_to_test}.pth')))
+blobs_to_maps.load_state_dict(torch.load(os.path.join(orig_models_dir,f'blobs_to_maps_{epoch_to_test}.pth')))
 
 mse = nn.MSELoss(reduce=False)
 
@@ -188,40 +190,40 @@ optimizer = optim.Adam(parameters, lr=params['lr'])
 
 
 
-for epoch in range(params['num_epochs']):
-
-  # run train and validation loops
+# run train and validation loops
 #   train_loss, train_ssim_per_future_frame = train(models, position_to_blobs, dataloader_train, optimizer, params, config, device)
 
-  with torch.no_grad():
-    valid_loss, valid_ssim_per_future_frame, mover_batch_seq_ind, non_mover_batch_seq_ind, best_batch_seq, worst_batch_seq = validate(models, position_to_blobs, dataloader_valid, params, config, device)    
+with torch.no_grad():
+  valid_loss, valid_ssim_per_future_frame, mover_batch_seq_ind, non_mover_batch_seq_ind, best_batch_seq, worst_batch_seq, valid_psnr_per_future_frame, valid_lpips_per_future_frame  = validate(models, position_to_blobs, dataloader_valid, params, config, device)    
 
-  # save model weights  
+# save model weights  
 #   torch.save(frame_encoder.state_dict(),os.path.join(models_dir,f'frame_encoder_{epoch}.pth'))
 #   torch.save(frame_decoder.state_dict(),os.path.join(models_dir,f'frame_decoder_{epoch}.pth'))
 #   torch.save(generation_lstm.state_dict(),os.path.join(models_dir,f'generation_lstm_{epoch}.pth'))
 #   torch.save(blobs_to_maps.state_dict(),os.path.join(models_dir,f'blobs_to_maps_{epoch}.pth'))
 
-#   # save visualizations
-#   batch_seq_ind_to_save = [mover_batch_seq_ind, non_mover_batch_seq_ind, best_batch_seq, worst_batch_seq]
-#   batch_seq_ind_names = ['mover','non-mover','best_mse','worst_mse']
-#   display_past_count = 3
-#   for i in range(len(batch_seq_ind_to_save)):
-#     batch, generated_seq, generated_grayscale_blob_maps, index = batch_seq_ind_to_save[i]
-#     frames = batch[0]
-#     gestures = batch[1]
-#     visualize_frame_diff(images_dir, batch_seq_ind_names[i], index, frames, generated_seq, generated_grayscale_blob_maps, display_past_count, params['past_count'], params['future_count'], epoch, gestures)  
+# save visualizations
+batch_seq_ind_to_save = [mover_batch_seq_ind, non_mover_batch_seq_ind, best_batch_seq, worst_batch_seq]
+batch_seq_ind_names = ['mover','non-mover','best_mse','worst_mse']
+display_past_count = 3
+for i in range(len(batch_seq_ind_to_save)):
+  batch, generated_seq, generated_grayscale_blob_maps, index = batch_seq_ind_to_save[i]
+  frames = batch[0]
+  gestures = batch[1]
+  visualize_frame_diff(images_dir, batch_seq_ind_names[i], index, frames, generated_seq, generated_grayscale_blob_maps, display_past_count, params['past_count'], params['future_count'], epoch_to_test, gestures)  
 
-  # print current results
-  print('Epoch {}: valid loss {}'.format(epoch,valid_loss.tolist()))    
-  print('Epoch {}: valid ssim {}'.format(epoch,[round(val,4) for val in valid_ssim_per_future_frame.round(decimals=4).tolist()]))    
+# print current results
+# print('Epoch {}: valid loss {}'.format(epoch,valid_loss.tolist()))    
+# print('Epoch {}: valid ssim {}'.format(epoch,[round(val,4) for val in valid_ssim_per_future_frame.round(decimals=4).tolist()]))    
 
-  # log to wandb
-  if use_wandb:
-    data_to_log = {}
-    for i in range(params['future_count']):        
-        data_to_log['valid_SSIM_timestep_{}'.format(i)] = valid_ssim_per_future_frame[i].item()
-        
-    data_to_log['valid_MSE'] = valid_loss[1].item()
-    # data_to_log['image'] = wandb.Image(image, caption=f"epoch {epoch}")    
-    wandb.log(data_to_log)       
+# log to wandb
+if use_wandb:
+  data_to_log = {}
+  for i in range(params['future_count']):        
+      data_to_log['valid_SSIM_timestep_{}'.format(i)] = valid_ssim_per_future_frame[i].item()
+      data_to_log['valid_PSNR_timestep_{}'.format(i)] = valid_psnr_per_future_frame[i].item()
+      data_to_log['valid_LPIPS_timestep_{}'.format(i)] = valid_lpips_per_future_frame[i].item()   
+      
+  data_to_log['valid_MSE'] = valid_loss[1].item()
+  # data_to_log['image'] = wandb.Image(image, caption=f"epoch {epoch}")    
+  wandb.log(data_to_log)       

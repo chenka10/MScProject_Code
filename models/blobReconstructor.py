@@ -121,6 +121,11 @@ class BlobConfig:
         self.side = side
         self.start_theta = start_theta
 
+    def __repr__(self):
+        return (f"BlobConfig(start_x={self.start_x}, start_y={self.start_y}, start_s={self.start_s}, "
+                f"a_range={self.a_range}, start_theta={self.start_theta}, side={self.side})")
+
+
 class PositionToBlobs(nn.Module):
     def __init__(self, blob_configs):
         super(PositionToBlobs, self).__init__()

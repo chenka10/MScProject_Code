@@ -2,13 +2,13 @@ import imageio
 import os
 
 # Directory containing the PNG images
-images_dir = "/home/chen/MScProject/Code/experiments/Blobs_LSTM/ModelTesting/V1_3_a3di9j14_2_C_5_position/"
+images_dir = "/home/chen/MScProject/Code/experiments/rarp50/Blobs_LSTM/ModelTesting/2_blobs_framesize_128_leave_37_models_20240629_174022_i1mrwoir_new1/"
 
 # List to store image paths
 image_paths = []
 
 # Iterate over the files in the directory
-i = 0
+i = 20
 while True:
     filename = f'test_{i}.png'
     filepath = os.path.join(images_dir, filename)

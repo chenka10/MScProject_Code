@@ -31,8 +31,24 @@ import torch.nn as nn
 import random
 import numpy as np
 import pandas as pd
+import argparse
+import json
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description='Train and validate LSTM model on RARP50 dataset.')
+    parser.add_argument('--video-to-leave', type=int, required=True, help='The video index to leave out during training (e.g., 37)')
+    parser.add_argument('--num-epochs', type=int, required=True)
+    parser.add_argument('--max-steps-per-epoch', type=int, required=False, default=None)
+    return parser.parse_args()
+
+# 1. Parse command-line arguments
+args = parse_args()
+
+# Set video_to_leave parameter from the command-line argument
+video_to_leave = args.video_to_leave
+num_epochs = args.num_epochs
+MAX_STEPS_PER_EPOCH = args.max_steps_per_epoch
 
 class DistanceLoss(nn.Module):
     def __init__(self):
@@ -51,15 +67,15 @@ torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 print('seed:', seed)
 
-device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(device)
 
 # 2. Set params
 params = {      
-   'video_to_leave':'37',
+   'video_to_leave':video_to_leave,
    'frame_size':128,
    'batch_size': 8,
-   'num_epochs':100,
+   'num_epochs':num_epochs,
    'img_compressed_size': 256,
    'prior_size': 32,
    'subjects_num': 8,
@@ -81,8 +97,8 @@ if params['dataset']=='ROSMA' and params['conditioning']!='position':
 
 # 3. Setup data
 df = pd.read_csv(os.path.join('/home/chen/MScProject/rarp50_filtered_data_detailed.csv'))
-df_train = df[~df['videoName'].isin(['video_37'])].reset_index(drop=True)
-df_test = df[df['videoName'].isin(['video_37'])].reset_index(drop=True)
+df_train = df[~df['videoName'].isin([f'video_{params["video_to_leave"]}'])].reset_index(drop=True)
+df_test = df[df['videoName'].isin([f'video_{params["video_to_leave"]}'])].reset_index(drop=True)
 
 DIGITS_IN_SEGMENTATION_FILE_NAME = 5
 FRAME_INCREMENT = 12
@@ -115,9 +131,9 @@ else:
 now = datetime.now()
 timestamp = now.strftime("%Y%m%d_%H%M%S")  # Format: YYYYMMDD_HHMMSS
 
-positions_to_blobs_dir = f'/home/chen/MScProject/Code/experiments/rarp50/Blobs/2_blobs_frameSize_128_seed_42_models'
-models_dir = f'/home/chen/MScProject/Code/experiments/rarp50/Blobs_LSTM/models_{params['conditioning']}/2_blobs_framesize_{params['frame_size']}_leave_{params['video_to_leave']}_models_{timestamp}_{runid}/'
-images_dir = f'/home/chen/MScProject/Code/experiments/rarp50/Blobs_LSTM/images_{params['conditioning']}/2_blobs_framesize_{params['frame_size']}_leave_{params['video_to_leave']}_images_{timestamp}_{runid}/'
+positions_to_blobs_dir = f'/home/chen/MScProject/Code/experiments/rarp50/Blobs/2_blobs_leave_surgeon_1_frameSize_128_seed_42_models'
+models_dir = f'/home/chen/MScProject/Code/experiments/rarp50/Blobs_LSTM/models_{params['conditioning']}/2_blobs_framesize_{params['frame_size']}_leave_{params['video_to_leave']}_models_{timestamp}_{runid}_new/'
+images_dir = f'/home/chen/MScProject/Code/experiments/rarp50/Blobs_LSTM/images_{params['conditioning']}/2_blobs_framesize_{params['frame_size']}_leave_{params['video_to_leave']}_images_{timestamp}_{runid}_new/'
 os.makedirs(images_dir,exist_ok=True)    
 os.makedirs(models_dir,exist_ok=True)
 
@@ -149,7 +165,7 @@ blob_config = [
 
 POSITION_TO_BLOBS_MODEL_EPOCH = 99
 position_to_blobs = KinematicsToBlobs(blob_config,True,True)
-position_to_blobs.load_state_dict(torch.load(os.path.join(positions_to_blobs_dir,f'positions_to_blobs_{POSITION_TO_BLOBS_MODEL_EPOCH}.pth')))
+position_to_blobs.load_state_dict(torch.load(os.path.join(positions_to_blobs_dir,f'positions_to_blobs_{POSITION_TO_BLOBS_MODEL_EPOCH}.pth'),map_location='cuda:0'))
 position_to_blobs.to(device)
 img_size = params['frame_size']
 blobs_to_maps = nn.ModuleList([BlobsToFeatureMaps(blob_feature_size,img_size),BlobsToFeatureMaps(blob_feature_size,img_size),                               
@@ -169,13 +185,23 @@ models = [
 parameters = sum([list(model.parameters()) for model in models],[])
 optimizer = optim.Adam(parameters, lr=params['lr'])
 
+print('~~~~~~~ Params ~~~~~~~')
+print(params)
+print("position_to_blobs_dir: ",positions_to_blobs_dir)
+print("output models dir: ", models_dir)
+print("output images dir: ", images_dir)
+print("Blob Config: ", blob_config)
+print("Parsed arguments:", json.dumps(vars(args), indent=4))
+print("~~~~~~~ Params End ~~~~~~~")
+
 for epoch in range(params['num_epochs']):
 
   # run train and validation loops
-  train_loss, train_ssim_per_future_frame = train(models, position_to_blobs, dataloader_train, optimizer, params, config, device)
+  train_loss, train_ssim_per_future_frame = train(models, position_to_blobs, dataloader_train, optimizer, params, config, device, MAX_STEPS_PER_EPOCH)
 
   with torch.no_grad():
-    valid_loss, valid_ssim_per_future_frame, mover_batch_seq_ind, non_mover_batch_seq_ind, best_batch_seq, worst_batch_seq = validate(models, position_to_blobs, dataloader_valid, params, config, device)    
+    # valid_loss, valid_ssim_per_future_frame, mover_batch_seq_ind, non_mover_batch_seq_ind, best_batch_seq, worst_batch_seq = validate(models, position_to_blobs, dataloader_valid, params, config, device)    
+    valid_loss, valid_ssim_per_future_frame, mover_batch_seq_ind, non_mover_batch_seq_ind, best_batch_seq, worst_batch_seq, _, _ = validate(models, position_to_blobs, dataloader_valid, params, config, device)    
 
   # save model weights  
   torch.save(frame_encoder.state_dict(),os.path.join(models_dir,f'frame_encoder_{epoch}.pth'))
